@@ -3,6 +3,7 @@ add_executable(1_test "1_temp.cpp")
 target_link_libraries(1_test PRIVATE
     header
     murmur
+    utils
     drambf
     drambbf
     dramohbbf
@@ -12,6 +13,7 @@ add_executable(2_cli "2_cli.cpp")
 target_link_libraries(2_cli PRIVATE
     header
     murmur
+    utils
     rdmabf
     rdmabbf
     rdmaohbbf
@@ -22,6 +24,7 @@ add_executable(2_srv "2_srv.cpp")
 target_link_libraries(2_srv PRIVATE
     header
     murmur
+    utils
     rdmabf
     rdmabbf
     rdmaohbbf

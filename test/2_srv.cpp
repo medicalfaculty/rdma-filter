@@ -6,6 +6,7 @@
 
 #define INSERT_COUNT (1 << 26)
 #define FALSE_POSITIVE_RATE (double)1.0 / 512
+#define CLIENT_COUNT 2
 
 int main(int argc, char **argv) {
     char cmd[16];
@@ -13,11 +14,11 @@ int main(int argc, char **argv) {
 
 
     struct RdmaBF_Srv rdma_bf_srv;
-    RdmaBF_Srv_init(&rdma_bf_srv, INSERT_COUNT, FALSE_POSITIVE_RATE);
+    RdmaBF_Srv_init(&rdma_bf_srv, INSERT_COUNT, FALSE_POSITIVE_RATE, CLIENT_COUNT);
 
-    send(rdma_bf_srv.sockfd, "READY", 6, 0);
-
-    recv(rdma_bf_srv.sockfd, cmd, 5, 0);
+    for (auto i : rdma_bf_srv.sockfd_list) {
+        recv(i, cmd, 5, 0);
+    }
 
     RdmaBF_Srv_destroy(&rdma_bf_srv);
 

@@ -14,6 +14,9 @@ target_include_directories(header INTERFACE
 add_library(murmur STATIC "common/murmur3.cpp")
 target_link_libraries(murmur PUBLIC header)
 
+add_library(utils STATIC "common/utils.cpp")
+target_link_libraries(utils PUBLIC header)
+
 
 add_library(drambf STATIC "dram_bf/dram_bf.cpp")
 target_link_libraries(drambf PUBLIC header murmur)

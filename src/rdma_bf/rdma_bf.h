@@ -11,12 +11,12 @@
 
 #include "rdma_common.h"
 
-
 struct RdmaBF_Cli
 {
     unsigned int m;
     unsigned int k;
     uint8_t *local_buf;
+    uint8_t *mutex_buf;
 
     ibv_context *ctx;
     ibv_pd *pd;
@@ -24,6 +24,7 @@ struct RdmaBF_Cli
     ibv_qp *qp;
 
     ibv_mr *local_mr;
+    ibv_mr *mutex_mr;
 
     rdma_conn_info remote_info;
 
@@ -47,11 +48,18 @@ struct RdmaBF_Srv
 
     ibv_context *ctx;
     ibv_pd *pd;
-    ibv_cq *cq;
-    ibv_qp *qp;
+    // ibv_cq *cq;
+    // ibv_qp *qp;
     ibv_mr *mr;
+    ibv_mr *mutex_mr;
 
-    int sockfd;
+    int *sockfd_list;
+    int count_clients_expected;
+    int count_clients_connected;
+    rdma_conn_info *remote_info_list;
+
+    unsigned int count_mutex;
+    uint8_t *mutex_list;
 };
 
 void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr);
@@ -59,5 +67,16 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr);
 void RdmaBF_Srv_destroy(struct RdmaBF_Srv *rdma_bf);
 
 void RdmaBF_Srv_clear(struct RdmaBF_Srv *rdma_bf);
+
+
+ibv_send_wr DEFAULT_RDMA_READ_WR = {
+    .wr_id = 1,
+    .opcode = IBV_WR_RDMA_READ,
+    // .sg_list = &sge,
+    .num_sge = 1,
+    .send_flags = IBV_SEND_SIGNALED,
+    // .wr.rdma.remote_addr = remote_addr,
+    // .wr.rdma.rkey = rkey,
+};
 
 #endif /* __RDMA_BF_H__ */
