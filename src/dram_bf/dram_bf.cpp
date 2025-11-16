@@ -23,6 +23,10 @@ void DramBF_init(struct DramBF *dram_bf, unsigned int n, double fpr)
     dram_bf->k = ceil(k);
     dram_bf->bit_vector = (uint8_t *)calloc(dram_bf->m >> 3, sizeof(uint8_t));
 
+    // debug
+    std::cout << "DramBF bit_vector size(bit): " << dram_bf->m << std::endl;
+    std::cout << "DramBF hash functions: " << dram_bf->k << std::endl;
+
     return;
 }
 

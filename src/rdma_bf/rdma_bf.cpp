@@ -15,7 +15,7 @@ using namespace std;
 #define TCP_PORT 18515       // 端口号用于 TCP 元数据交换
 #define GID_INDEX 3
 
-#define MUTEX_GRAN 1024     // 每个锁占 1 字节，每个锁锁了 __(粒度) 字节
+#define MUTEX_GRAN 1024     // 每个锁占 8 字节，每个锁锁了 (粒度) 字节
 
 void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, const char* server_ip)
 {
@@ -26,12 +26,12 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     rdma_bf->m = ((int(m) >> 3) + 1) << 3;
     rdma_bf->k = ceil(k);
 
-
+    // 1. 获取 RDMA 设备和保护域
     ibv_device **dev_list = ibv_get_device_list(NULL);
     rdma_bf->ctx = ibv_open_device(dev_list[0]);
     rdma_bf->pd = ibv_alloc_pd(rdma_bf->ctx);
     rdma_bf->cq = ibv_create_cq(rdma_bf->ctx, 16, NULL, NULL, 0);
-    // std::cout << "debug: 02" << std::endl;
+
     ibv_qp_init_attr qp_init_attr = {};
     qp_init_attr.send_cq = rdma_bf->cq;
     qp_init_attr.recv_cq = rdma_bf->cq;
@@ -41,7 +41,7 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     qp_init_attr.cap.max_send_sge = 1;
     qp_init_attr.cap.max_recv_sge = 1;
     rdma_bf->qp = ibv_create_qp(rdma_bf->pd, &qp_init_attr);
-    // std::cout << "debug: 03" << std::endl;
+
     ibv_qp_attr attr = {};
     attr.qp_state = IBV_QPS_INIT;
     attr.port_num = 1;
@@ -49,36 +49,48 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC;
     ibv_modify_qp(rdma_bf->qp, &attr,
         IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS);
-    // std::cout << "debug: 04" << std::endl;
+
     rdma_conn_info local_info = {};
     local_info.qp_num = rdma_bf->qp->qp_num;
     local_info.psn = lrand48() & 0xffffff;
-    // std::cout << "debug: 05" << std::endl;
+
     // 使用临时变量获取对齐的 GID
     ibv_gid tmp_gid;
     ibv_query_gid(rdma_bf->ctx, 1, GID_INDEX, &tmp_gid);
     // 拷贝到结构体成员，避免直接传非对齐指针
     memcpy(&local_info.gid, &tmp_gid, sizeof(ibv_gid));
-    // std::cout << "debug: 06" << std::endl;
+
     // 连接到服务器交换信息
     rdma_bf->sockfd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in sock_addr = {};
     sock_addr.sin_family = AF_INET;
     sock_addr.sin_port = htons(TCP_PORT);
     inet_pton(AF_INET, server_ip, &sock_addr.sin_addr);
-    connect(rdma_bf->sockfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
-    // std::cout << "debug: 07" << std::endl;
+    std::cout << "[Client] Connecting to server at " << server_ip << "..." << std::endl;
+    int ret = connect(rdma_bf->sockfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
+    if (ret < 0) {
+        fprintf(stderr, "connect to server failed");
+        std::cout << std::endl << "[Client] Please exit: Ctrl + c" << std::endl;
+        sleep(600);
+        exit(1);
+    }
+    std::cout << "[Client] Connected to server at " << server_ip << std::endl;
+
     rdma_bf->remote_info = {};
     send(rdma_bf->sockfd, &local_info, sizeof(local_info), 0);
     recv(rdma_bf->sockfd, &rdma_bf->remote_info, sizeof(rdma_bf->remote_info), 0);
-    // std::cout << "debug: 08" << std::endl;
+
+    // debug
+    // std::cout << "remote_info.mutex_addr: " << rdma_bf->remote_info.mutex_addr << std::endl;
+
     // 设置 QP -> RTR
     ibv_qp_attr rtr_attr = {};
     rtr_attr.qp_state = IBV_QPS_RTR;
     rtr_attr.path_mtu = IBV_MTU_1024;
     rtr_attr.dest_qp_num = rdma_bf->remote_info.qp_num;
     rtr_attr.rq_psn = rdma_bf->remote_info.psn;
-    rtr_attr.max_dest_rd_atomic = 1;
+    // rtr_attr.max_dest_rd_atomic = 1;
+    rtr_attr.max_dest_rd_atomic = 16;
     rtr_attr.min_rnr_timer = 12;
     rtr_attr.ah_attr.is_global = 1;
     rtr_attr.ah_attr.grh.dgid = rdma_bf->remote_info.gid;
@@ -89,23 +101,32 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
         IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
         IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
         IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
-    // std::cout << "debug: 09" << std::endl;
+
     // 设置 QP -> RTS
     ibv_qp_attr rts_attr = {};
     rts_attr.qp_state = IBV_QPS_RTS;
     rts_attr.timeout = 14;
-    rts_attr.retry_cnt = 7;
-    rts_attr.rnr_retry = 7;
+    // rts_attr.retry_cnt = 7;
+    rts_attr.retry_cnt = 12;
+    // rts_attr.rnr_retry = 7;
+    rts_attr.rnr_retry = 12;
     rts_attr.sq_psn = local_info.psn;
-    rts_attr.max_rd_atomic = 1;
+    // rts_attr.max_rd_atomic = 1;
+    rts_attr.max_rd_atomic = 16;
     ibv_modify_qp(rdma_bf->qp, &rts_attr,
         IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
         IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC);
-    // std::cout << "debug: 10" << std::endl;
+
     // 注册内存，原子操作需要至少8字节
     rdma_bf->local_buf = (uint8_t *)malloc(1);
     rdma_bf->local_mr = ibv_reg_mr(rdma_bf->pd, rdma_bf->local_buf, 1, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
-    rdma_bf->mutex_buf = (uint8_t *)malloc(8);
+
+    int ret_posix = posix_memalign((void**)&rdma_bf->mutex_buf, 8, 8);
+    if (ret_posix != 0) {
+        fprintf(stderr, "posix_memalign failed for mutex_buf");
+        return;
+    }
+
     rdma_bf->mutex_mr = ibv_reg_mr(rdma_bf->pd, rdma_bf->mutex_buf, 8, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
     if (!rdma_bf->local_mr) {
         fprintf(stderr, "ibv_reg_mr");
@@ -115,9 +136,11 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     }
 
     char cmd[6];
-    recv(rdma_bf->sockfd, cmd, 6, 0);
+    while (recv(rdma_bf->sockfd, cmd, 6, 0) <= 0) {
+        sleep(1);
+    }
 
-    std::cout << "[Client] RDMA connection established successfully!" << std::endl;
+    std::cout << "[Client] Initialization successfully!" << std::endl;
     
     return;
 }
@@ -144,6 +167,11 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
         uint32_t byte_offset = hash >> 3;
         uint32_t bit_offset = hash & 7;
         uint32_t mutex_offset = byte_offset / MUTEX_GRAN;
+        
+        // debug
+        // std::cout << "byte_offset: " << byte_offset << std::endl;
+        // std::cout << "mutex_offset: " << mutex_offset << std::endl;
+
 
     // ---------------- 加锁（使用RDMA CAS原子操作） ----------------
     ibv_sge lock_sge = {};
@@ -157,7 +185,7 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     lock_wr.sg_list = &lock_sge;
     lock_wr.num_sge = 1;
     lock_wr.send_flags = IBV_SEND_SIGNALED;
-    lock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset;
+    lock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset * sizeof(uint64_t);
     lock_wr.wr.atomic.rkey = rdma_bf->remote_info.mutex_rkey;
     lock_wr.wr.atomic.compare_add = 0;  // 期望值为0（未锁定）
     lock_wr.wr.atomic.swap = 1;         // 交换为1（锁定）
@@ -165,20 +193,21 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     ibv_send_wr *bad_wr;
     ibv_wc wc;
     // 自旋直到获取锁
-    while (1) {
-        if (ibv_post_send(rdma_bf->qp, &lock_wr, &bad_wr)) {
-            fprintf(stderr, "ibv_post_send (CAS lock)");
-            return 0;
-        }
-        while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
-        if (wc.status != IBV_WC_SUCCESS) {
-            fprintf(stderr, "CAS lock failed: %s\n", ibv_wc_status_str(wc.status));
-            return 0;
-        }
-        // 如果返回值为0，说明成功获取锁
-        if (*(uint8_t*)rdma_bf->mutex_buf == 0) break;
-        else usleep(100 + rand() % 200);
-    }
+    // while (1) {
+    //     if (ibv_post_send(rdma_bf->qp, &lock_wr, &bad_wr)) {
+    //         fprintf(stderr, "ibv_post_send (CAS lock)");
+    //         return 0;
+    //     }
+    //     while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+    //     if (wc.status != IBV_WC_SUCCESS) {
+    //         fprintf(stderr, "CAS lock failed: %s\n", ibv_wc_status_str(wc.status));
+    //         exit(1);
+    //         return 0;
+    //     }
+    //     // 如果返回值为0，说明成功获取锁
+    //     if (*rdma_bf->mutex_buf == 0) break;
+    //     else usleep(100 + rand() % 200);
+    // }
 
     // ---------------- RDMA READ ----------------
     ibv_sge sge = {};
@@ -245,20 +274,20 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     unlock_wr.sg_list = &lock_sge;
     unlock_wr.num_sge = 1;
     unlock_wr.send_flags = IBV_SEND_SIGNALED;
-    unlock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset;
+    unlock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset * sizeof(uint64_t);
     unlock_wr.wr.atomic.rkey = rdma_bf->remote_info.mutex_rkey;
     unlock_wr.wr.atomic.compare_add = 1;  // 期望值为1（已锁定）
     unlock_wr.wr.atomic.swap = 0;         // 交换为0（解锁）
 
-    if (ibv_post_send(rdma_bf->qp, &unlock_wr, &bad_wr)) {
-        fprintf(stderr, "ibv_post_send (CAS unlock)");
-        return 0;
-    }
-    while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
-    if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "CAS unlock failed: %s\n", ibv_wc_status_str(wc.status));
-        return 0;
-    }
+    // if (ibv_post_send(rdma_bf->qp, &unlock_wr, &bad_wr)) {
+    //     fprintf(stderr, "ibv_post_send (CAS unlock)");
+    //     return 0;
+    // }
+    // while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+    // if (wc.status != IBV_WC_SUCCESS) {
+    //     fprintf(stderr, "CAS unlock failed: %s\n", ibv_wc_status_str(wc.status));
+    //     return 0;
+    // }
 
     }
     return 1;
@@ -266,12 +295,49 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
 
 int RdmaBF_Cli_lookup(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
 
+    int flag_found = 1;
     for (int i = 0; i < rdma_bf->k; ++i) {
         uint32_t hash;
         murmur3_hash32(&key, 8, i, &hash);
         hash %= (rdma_bf->m);
         uint32_t byte_offset = hash >> 3;
         uint32_t bit_offset = hash & 7;
+        uint32_t mutex_offset = byte_offset / MUTEX_GRAN;
+
+    // ---------------- 加锁（使用RDMA CAS原子操作） ----------------
+    ibv_sge lock_sge = {};
+    lock_sge.addr = (uintptr_t)rdma_bf->mutex_buf;
+    lock_sge.length = 8;
+    lock_sge.lkey = rdma_bf->mutex_mr->lkey;
+
+    ibv_send_wr lock_wr = {};
+    lock_wr.wr_id = 100;
+    lock_wr.opcode = IBV_WR_ATOMIC_CMP_AND_SWP;
+    lock_wr.sg_list = &lock_sge;
+    lock_wr.num_sge = 1;
+    lock_wr.send_flags = IBV_SEND_SIGNALED;
+    lock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset * sizeof(uint64_t);
+    lock_wr.wr.atomic.rkey = rdma_bf->remote_info.mutex_rkey;
+    lock_wr.wr.atomic.compare_add = 0;  // 期望值为0（未锁定）
+    lock_wr.wr.atomic.swap = 1;         // 交换为1（锁定）
+
+    ibv_send_wr *bad_wr;
+    ibv_wc wc;
+    // 自旋直到获取锁
+    while (1) {
+        if (ibv_post_send(rdma_bf->qp, &lock_wr, &bad_wr)) {
+            fprintf(stderr, "ibv_post_send (CAS lock)");
+            return 0;
+        }
+        while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+        if (wc.status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "CAS lock failed: %s\n", ibv_wc_status_str(wc.status));
+            return 0;
+        }
+        // 如果返回值为0，说明成功获取锁
+        if (*rdma_bf->mutex_buf == 0) break;
+        else usleep(100 + rand() % 200);
+    }
 
     // ---------- RDMA READ ----------
     ibv_sge sge = {};
@@ -288,14 +354,14 @@ int RdmaBF_Cli_lookup(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     wr.wr.rdma.remote_addr = rdma_bf->remote_info.remote_addr + byte_offset;
     wr.wr.rdma.rkey = rdma_bf->remote_info.rkey;
 
-    ibv_send_wr *bad_wr;
+    // ibv_send_wr *bad_wr;
     if (ibv_post_send(rdma_bf->qp, &wr, &bad_wr)) {
         fprintf(stderr, "ibv_post_send (lookup)");
         return 0;
     }
 
     // ---------- CQ轮询等待完成 ----------
-    ibv_wc wc = {};
+    wc = {};
     while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
     if (wc.status != IBV_WC_SUCCESS) {
         fprintf(stderr, "RDMA READ failed in lookup: %s\n", ibv_wc_status_str(wc.status));
@@ -304,11 +370,36 @@ int RdmaBF_Cli_lookup(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
 
     // ---------- Check bit ----------
     if (!bit_get(rdma_bf->local_buf, bit_offset)) {
+        flag_found = 0;
+        break;
+    }
+
+    // ---------------- 解锁（使用RDMA原子操作） ----------------
+    *(uint64_t*)rdma_bf->mutex_buf = 0;  // 设置交换值为0（解锁）
+    
+    ibv_send_wr unlock_wr = {};
+    unlock_wr.wr_id = 101;
+    unlock_wr.opcode = IBV_WR_ATOMIC_CMP_AND_SWP;
+    unlock_wr.sg_list = &lock_sge;
+    unlock_wr.num_sge = 1;
+    unlock_wr.send_flags = IBV_SEND_SIGNALED;
+    unlock_wr.wr.atomic.remote_addr = rdma_bf->remote_info.mutex_addr + mutex_offset * sizeof(uint64_t);
+    unlock_wr.wr.atomic.rkey = rdma_bf->remote_info.mutex_rkey;
+    unlock_wr.wr.atomic.compare_add = 1;  // 期望值为1（已锁定）
+    unlock_wr.wr.atomic.swap = 0;         // 交换为0（解锁）
+
+    if (ibv_post_send(rdma_bf->qp, &unlock_wr, &bad_wr)) {
+        fprintf(stderr, "ibv_post_send (CAS unlock)");
+        return 0;
+    }
+    while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+    if (wc.status != IBV_WC_SUCCESS) {
+        fprintf(stderr, "CAS unlock failed: %s\n", ibv_wc_status_str(wc.status));
         return 0;
     }
 
     }
-    return 1;
+    return flag_found;
 }
 
 void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int client_count) {
@@ -319,13 +410,24 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
     rdma_bf->m = ((int(m) >> 3) + 1) << 3;
     rdma_bf->k = ceil(k);
     rdma_bf->bit_vector = (uint8_t *)calloc(rdma_bf->m >> 3, sizeof(uint8_t));
-    rdma_bf->count_mutex = (rdma_bf->m >> 3) / MUTEX_GRAN;
+    rdma_bf->count_mutex = (rdma_bf->m >> 3) / MUTEX_GRAN + 1;
+    std::cout << "[Server] BF size(MB): " << rdma_bf->m / 8 / 1024 / 1024 << std::endl;
+    std::cout << "[Server] Mutex list size(KB): " << rdma_bf->count_mutex * sizeof(uint64_t) / 1024 << std::endl;
 
     rdma_bf->count_clients_expected = client_count;
     rdma_bf->count_clients_connected = 0;
     rdma_bf->sockfd_list = (int *)calloc(client_count, sizeof(int));
     rdma_bf->remote_info_list = (rdma_conn_info *)calloc(client_count, sizeof(rdma_conn_info));
-    rdma_bf->mutex_list = (uint8_t *)calloc(rdma_bf->count_mutex, sizeof(uint8_t));
+    // rdma_bf->mutex_list = (uint64_t *)calloc(rdma_bf->count_mutex, sizeof(uint64_t));
+    int ret_posix = posix_memalign((void **)&rdma_bf->mutex_list, 64, rdma_bf->count_mutex * sizeof(uint64_t));
+    if (ret_posix != 0) {
+        fprintf(stderr, "posix_memalign failed");
+        return;
+    }
+    
+    // debug
+    // std::cout << "mutex_list: " << (uint64_t)rdma_bf->mutex_list << std::endl;
+    // std::cout << "count_mutex: " << rdma_bf->count_mutex << std::endl;
 
     // 1. 获取 RDMA 设备和保护域
     // todo: device name
@@ -346,7 +448,7 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
     }
 
     // 注册内存区域 - mutex_list
-    rdma_bf->mutex_mr = ibv_reg_mr(rdma_bf->pd, rdma_bf->mutex_list, rdma_bf->count_mutex,
+    rdma_bf->mutex_mr = ibv_reg_mr(rdma_bf->pd, rdma_bf->mutex_list, rdma_bf->count_mutex * sizeof(uint64_t),
         IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_ATOMIC);
 
     if (!rdma_bf->mutex_mr) {
@@ -393,6 +495,7 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
             fprintf(stderr, "accept failed");
             exit(1);
         }
+        std::cout << "[Server] connected client: " << i + 1 << '/' << client_count << std::endl;
         rdma_bf->sockfd_list[i] = client_fd;
         send(client_fd, &local_info, sizeof(local_info), 0);
         recv(client_fd, &rdma_bf->remote_info_list[i], sizeof(rdma_bf->remote_info_list[i]), 0);
@@ -402,7 +505,7 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
         send(rdma_bf->sockfd_list[i], "READY", 6, 0);
     }
 
-    std::cout << "[Server] RDMA connection established successfully!" << std::endl;
+    std::cout << "[Server] Initialization successfully!" << std::endl;
 
     return;
 }

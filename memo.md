@@ -1,27 +1,75 @@
-
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@c220g1-030830.wisc.cloudlab.us
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@clnode294.clemson.cloudlab.us
-
 cd D:\study\rdma-filter\
-scp -r src test CMakeLists.txt yunchuan@c220g1-030830.wisc.cloudlab.us:exp01
-scp -r src test CMakeLists.txt yunchuan@clnode294.clemson.cloudlab.us:exp01
 
-scp src\rdma_bf\rdma_bf.h yunchuan@clnode305.clemson.cloudlab.us:exp01\src\rdma_bf
-scp test\2_cli.cpp test\2_srv.cpp yunchuan@clnode305.clemson.cloudlab.us:exp01\test
-scp test\2_cli.cpp test\2_srv.cpp yunchuan@clnode294.clemson.cloudlab.us:exp01\test
+实验室机器
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" -p 10131 root@210.28.134.155
+scp -r -i "C:\Users\Yuandu\.ssh\id_rsa" -P 10131 src test CMakeLists.txt build root@210.28.134.155:liuyunchuan/exp01
+cmake -DTOGGLE_RDMA=OFF ..
+
+美国机器
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd204.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd141.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd183.utah.cloudlab.us
+
+scp -r src test CMakeLists.txt build yunchuan@amd204.utah.cloudlab.us:exp01
+scp -r src test CMakeLists.txt build yunchuan@amd141.utah.cloudlab.us:exp01
+scp -r src test CMakeLists.txt build yunchuan@amd183.utah.cloudlab.us:exp01
 
 sudo apt update
 sudo apt install cmake libibverbs-dev rdma-core librdmacm1 librdmacm-dev ibverbs-utils infiniband-diags perftest linux-tools-common linux-tools-generic linux-cloud-tools-generic
-
 
 ./test/1_test
 ./test/2_srv
 ./test/2_cli
 
-
+ping 10.10.1.1
 ib_send_bw -d mlx5_0
-ib_send_bw -d mlx5_0               10.10.1.2
-ib_send_bw -d mlx5_0 -D 4 -s 65536 10.10.1.2 
+ib_send_bw -d mlx5_0               10.10.1.1
+ib_send_bw -d mlx5_0 -D 4 -s 65536 10.10.1.1
+
+scp src\rdma_bf\rdma_bf.h yunchuan@clnode305.clemson.cloudlab.us:exp01\src\rdma_bf
+scp test\2_cli.cpp test\2_srv.cpp yunchuan@amd204.utah.cloudlab.us:exp01\test
+scp test\2_cli.cpp test\2_srv.cpp yunchuan@clnode294.clemson.cloudlab.us:exp01\test
+
+查看NAT地址
+ip a
+
+查看网卡名
+ibstat
+
+
+
+## CloudLab Node
+
+网卡支持rdma的节点
+
++ (Powder)
+d760p, d760-gpu, d760-hgpu
+
++ Apt: 1
+r320
+
++ CloudLab Utah: 5
+m510, xl170, d6515, c6525, c6620 (d750, d7615, d760, d760-hbm)
+
++ Wisconsin: 5
+c240g5, sm110p, sm220u, d7525, d8545
+
++ Clemson: 6
+ibm8335, r7525, r650, r6525, nvidiagh, r6615
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -35,4 +83,15 @@ ib_send_bw -d mlx5_0 -D 4 -s 65536 10.10.1.2
 报错：服务端listen时，客户端connect函数阻塞了
 解决：调试出报错信息：bind failed: Address already in use，原因是上次运行没正常结束，没有释放系统socket
     连续运行两种rdma索引就会卡住，就是因为这个，不知道咋办，就一次只运行一次
-    临时解决办法：`sudo lsof -i :18515`，然后`kill`
+    临时解决办法：`sudo lsof -i :18515`查看进程编号，然后`kill`
+
+
+异常：使用从cuckoo filter库抄来的生成随机数的函数，生成随机数据集，做dram实验时发现fpr比预期高了一倍还多，然后使用固定的数字作数据集，fpr顺利降了下来，因此怀疑生成随机数据集的代码。
+更新：使用固定的数字作数据集，fpr也不对，所以跟数据集没关系。把bf代码换成wormhole里的版本，fpr也不对，搁置了，找不出原因。
+解决：师兄说是哈希函数的问题，不用在意。
+
+
+报错：CAS lock failed: transport retry counter exceeded
+    RDMA READ failed: transport retry counter exceeded
+分析：本端发请求，对端没反应，本端又自动试了几次，一直没反应，重试次数就耗尽了，网卡就写一个失败标志放进cq里。
+尝试：回退到之前无锁单客户端版本试一试，对比对比。

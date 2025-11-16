@@ -6,7 +6,7 @@
 
 #define INSERT_COUNT (1 << 26)
 #define FALSE_POSITIVE_RATE (double)1.0 / 512
-#define CLIENT_COUNT 2
+#define CLIENT_COUNT 1
 
 int main(int argc, char **argv) {
     char cmd[16];

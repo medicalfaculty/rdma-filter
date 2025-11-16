@@ -31,6 +31,14 @@ int main(int argc, char **argv) {
     struct RdmaBF_Cli rdma_bf_cli;
     RdmaBF_Cli_init(&rdma_bf_cli, INSERT_COUNT, FALSE_POSITIVE_RATE, SERVER_IP);
 
+    RdmaBF_Cli_insert(&rdma_bf_cli, 1);
+
+    send(rdma_bf_cli.sockfd, "EXIT", 5, 0);
+    RdmaBF_Cli_destroy(&rdma_bf_cli);
+    exit(0);
+
+
+
     std::cout << "RdmaFilter Inserting " << REAL_INSERT_COUNT << " items..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
     for (auto i : to_insert) {

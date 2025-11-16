@@ -16,7 +16,7 @@ struct RdmaBF_Cli
     unsigned int m;
     unsigned int k;
     uint8_t *local_buf;
-    uint8_t *mutex_buf;
+    uint64_t *mutex_buf;
 
     ibv_context *ctx;
     ibv_pd *pd;
@@ -59,7 +59,7 @@ struct RdmaBF_Srv
     rdma_conn_info *remote_info_list;
 
     unsigned int count_mutex;
-    uint8_t *mutex_list;
+    uint64_t *mutex_list;
 };
 
 void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int client_count);
