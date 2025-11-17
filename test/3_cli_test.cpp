@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 
     RdmaBF_Cli_insert(&rdma_bf_cli, 1);
 
-    send(rdma_bf_cli.sockfd, "EXIT", 5, 0);
+    reliable_send(rdma_bf_cli.sockfd, "EXIT", 5);
     RdmaBF_Cli_destroy(&rdma_bf_cli);
     exit(0);
 

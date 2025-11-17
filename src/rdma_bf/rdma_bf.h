@@ -55,7 +55,6 @@ struct RdmaBF_Srv
 
     int *sockfd_list;
     int count_clients_expected;
-    int count_clients_connected;
     rdma_conn_info *remote_info_list;
 
     unsigned int count_mutex;

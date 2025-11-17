@@ -1,5 +1,6 @@
 #include "rdma_bf.h"
 #include "murmur3.h"
+#include "utils.h"
 
 #include <iostream>
 #include <math.h>
@@ -77,8 +78,8 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     std::cout << "[Client] Connected to server at " << server_ip << std::endl;
 
     rdma_bf->remote_info = {};
-    send(rdma_bf->sockfd, &local_info, sizeof(local_info), 0);
-    recv(rdma_bf->sockfd, &rdma_bf->remote_info, sizeof(rdma_bf->remote_info), 0);
+    reliable_send(rdma_bf->sockfd, &local_info, sizeof(local_info));
+    reliable_recv(rdma_bf->sockfd, &rdma_bf->remote_info, sizeof(rdma_bf->remote_info));
 
     // debug
     // std::cout << "remote_info.mutex_addr: " << rdma_bf->remote_info.mutex_addr << std::endl;
@@ -136,9 +137,7 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     }
 
     char cmd[6];
-    while (recv(rdma_bf->sockfd, cmd, 6, 0) <= 0) {
-        sleep(1);
-    }
+    reliable_recv(rdma_bf->sockfd, cmd, 6);
 
     std::cout << "[Client] Initialization successfully!" << std::endl;
     
@@ -415,7 +414,6 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
     std::cout << "[Server] Mutex list size(KB): " << rdma_bf->count_mutex * sizeof(uint64_t) / 1024 << std::endl;
 
     rdma_bf->count_clients_expected = client_count;
-    rdma_bf->count_clients_connected = 0;
     rdma_bf->sockfd_list = (int *)calloc(client_count, sizeof(int));
     rdma_bf->remote_info_list = (rdma_conn_info *)calloc(client_count, sizeof(rdma_conn_info));
     // rdma_bf->mutex_list = (uint64_t *)calloc(rdma_bf->count_mutex, sizeof(uint64_t));
@@ -497,12 +495,12 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
         }
         std::cout << "[Server] connected client: " << i + 1 << '/' << client_count << std::endl;
         rdma_bf->sockfd_list[i] = client_fd;
-        send(client_fd, &local_info, sizeof(local_info), 0);
-        recv(client_fd, &rdma_bf->remote_info_list[i], sizeof(rdma_bf->remote_info_list[i]), 0);
+        reliable_send(client_fd, &local_info, sizeof(local_info));
+        reliable_recv(client_fd, &rdma_bf->remote_info_list[i], sizeof(rdma_bf->remote_info_list[i]));
     }
 
     for (int i = 0; i < client_count; i++) {
-        send(rdma_bf->sockfd_list[i], "READY", 6, 0);
+        reliable_send(rdma_bf->sockfd_list[i], "READY", 6);
     }
 
     std::cout << "[Server] Initialization successfully!" << std::endl;

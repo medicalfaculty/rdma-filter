@@ -76,7 +76,7 @@ int main(int argc, char **argv) {
     std::cout << "Throughput-Lookup(False Positive)(op/s): " << LOOKUP_COUNT / duration.count() * 1000.0 << std::endl;
 
 
-    send(rdma_bf_cli.sockfd, "EXIT", 5, 0);
+    reliable_send(rdma_bf_cli.sockfd, "EXIT", 5);
     RdmaBF_Cli_destroy(&rdma_bf_cli);
 
 // ----------------------------------------------------------------------------------------------

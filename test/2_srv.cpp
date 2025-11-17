@@ -1,6 +1,7 @@
 #include "rdma_bf.h"
 #include "rdma_bbf.h"
 #include "rdma_ohbbf.h"
+#include "utils.h"
 
 #include <iostream>
 
@@ -17,7 +18,7 @@ int main(int argc, char **argv) {
     RdmaBF_Srv_init(&rdma_bf_srv, INSERT_COUNT, FALSE_POSITIVE_RATE, CLIENT_COUNT);
 
     for (int i = 0; i < CLIENT_COUNT; i++) {
-        recv(rdma_bf_srv.sockfd_list[i], cmd, 5, 0);
+        reliable_recv(rdma_bf_srv.sockfd_list[i], cmd, 5);
     }
 
     RdmaBF_Srv_destroy(&rdma_bf_srv);
