@@ -97,3 +97,4 @@ ibm8335, r7525, r650, r6525, nvidiagh, r6615
 尝试：回退到之前无锁单客户端版本试一试，对比对比。
 更新：在旧版本的基础上，为server添加创建锁列表、连接多client的功能，然后删去cq和qp，client基本没有改变，然后运行时就报了retry exceeded，因此怀疑是删去cq和qp的问题。
 更新：再回退，只添加创建锁列表、连接多client的功能，不删去cq和qp，再次运行就正常。因此更确信是删去cq和qp的问题，不过暂不清楚原理。
+定位问题：本来正常的代码，仅仅注释掉server里把qp.qp_num传给client的代码时，就出现了retry exceeded。但是还不了解原理。
