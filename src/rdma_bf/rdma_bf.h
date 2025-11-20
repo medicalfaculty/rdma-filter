@@ -48,8 +48,8 @@ struct RdmaBF_Srv
 
     ibv_context *ctx;
     ibv_pd *pd;
-    // ibv_cq *cq;
-    // ibv_qp *qp;
+    ibv_cq *cq;
+    ibv_qp **qp_list;
     ibv_mr *mr;
     ibv_mr *mutex_mr;
 

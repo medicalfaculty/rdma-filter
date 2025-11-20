@@ -68,12 +68,12 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     sock_addr.sin_port = htons(TCP_PORT);
     inet_pton(AF_INET, server_ip, &sock_addr.sin_addr);
     std::cout << "[Client] Connecting to server at " << server_ip << "..." << std::endl;
-    int ret = connect(rdma_bf->sockfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
-    if (ret < 0) {
-        fprintf(stderr, "connect to server failed");
-        std::cout << std::endl << "[Client] Please exit: Ctrl + c" << std::endl;
-        sleep(600);
-        exit(1);
+    int return_connect = 1;
+    while (return_connect != 0) {
+        return_connect = connect(rdma_bf->sockfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
+        if (return_connect < 0) {
+            sleep(1);
+        }
     }
     std::cout << "[Client] Connected to server at " << server_ip << std::endl;
 
@@ -90,8 +90,8 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     rtr_attr.path_mtu = IBV_MTU_1024;
     rtr_attr.dest_qp_num = rdma_bf->remote_info.qp_num;
     rtr_attr.rq_psn = rdma_bf->remote_info.psn;
-    // rtr_attr.max_dest_rd_atomic = 1;
-    rtr_attr.max_dest_rd_atomic = 16;
+    rtr_attr.max_dest_rd_atomic = 1;
+    // rtr_attr.max_dest_rd_atomic = 16;
     rtr_attr.min_rnr_timer = 12;
     rtr_attr.ah_attr.is_global = 1;
     rtr_attr.ah_attr.grh.dgid = rdma_bf->remote_info.gid;
@@ -107,13 +107,13 @@ void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, con
     ibv_qp_attr rts_attr = {};
     rts_attr.qp_state = IBV_QPS_RTS;
     rts_attr.timeout = 14;
-    // rts_attr.retry_cnt = 7;
-    rts_attr.retry_cnt = 12;
-    // rts_attr.rnr_retry = 7;
-    rts_attr.rnr_retry = 12;
+    rts_attr.retry_cnt = 7;
+    // rts_attr.retry_cnt = 12;
+    rts_attr.rnr_retry = 7;
+    // rts_attr.rnr_retry = 12;
     rts_attr.sq_psn = local_info.psn;
-    // rts_attr.max_rd_atomic = 1;
-    rts_attr.max_rd_atomic = 16;
+    rts_attr.max_rd_atomic = 1;
+    // rts_attr.max_rd_atomic = 16;
     ibv_modify_qp(rdma_bf->qp, &rts_attr,
         IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
         IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC);
@@ -192,21 +192,21 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     ibv_send_wr *bad_wr;
     ibv_wc wc;
     // 自旋直到获取锁
-    // while (1) {
-    //     if (ibv_post_send(rdma_bf->qp, &lock_wr, &bad_wr)) {
-    //         fprintf(stderr, "ibv_post_send (CAS lock)");
-    //         return 0;
-    //     }
-    //     while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
-    //     if (wc.status != IBV_WC_SUCCESS) {
-    //         fprintf(stderr, "CAS lock failed: %s\n", ibv_wc_status_str(wc.status));
-    //         exit(1);
-    //         return 0;
-    //     }
-    //     // 如果返回值为0，说明成功获取锁
-    //     if (*rdma_bf->mutex_buf == 0) break;
-    //     else usleep(100 + rand() % 200);
-    // }
+    while (1) {
+        if (ibv_post_send(rdma_bf->qp, &lock_wr, &bad_wr)) {
+            fprintf(stderr, "ibv_post_send (CAS lock)");
+            return 0;
+        }
+        while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+        if (wc.status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "CAS lock failed: %s\n", ibv_wc_status_str(wc.status));
+            exit(1);
+            return 0;
+        }
+        // 如果返回值为0，说明成功获取锁
+        if (*rdma_bf->mutex_buf == 0) break;
+        else usleep(100 + rand() % 200);
+    }
 
     // ---------------- RDMA READ ----------------
     ibv_sge sge = {};
@@ -278,15 +278,15 @@ int RdmaBF_Cli_insert(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     unlock_wr.wr.atomic.compare_add = 1;  // 期望值为1（已锁定）
     unlock_wr.wr.atomic.swap = 0;         // 交换为0（解锁）
 
-    // if (ibv_post_send(rdma_bf->qp, &unlock_wr, &bad_wr)) {
-    //     fprintf(stderr, "ibv_post_send (CAS unlock)");
-    //     return 0;
-    // }
-    // while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
-    // if (wc.status != IBV_WC_SUCCESS) {
-    //     fprintf(stderr, "CAS unlock failed: %s\n", ibv_wc_status_str(wc.status));
-    //     return 0;
-    // }
+    if (ibv_post_send(rdma_bf->qp, &unlock_wr, &bad_wr)) {
+        fprintf(stderr, "ibv_post_send (CAS unlock)");
+        return 0;
+    }
+    while (ibv_poll_cq(rdma_bf->cq, 1, &wc) < 1);
+    if (wc.status != IBV_WC_SUCCESS) {
+        fprintf(stderr, "CAS unlock failed: %s\n", ibv_wc_status_str(wc.status));
+        return 0;
+    }
 
     }
     return 1;
@@ -370,7 +370,6 @@ int RdmaBF_Cli_lookup(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
     // ---------- Check bit ----------
     if (!bit_get(rdma_bf->local_buf, bit_offset)) {
         flag_found = 0;
-        break;
     }
 
     // ---------------- 解锁（使用RDMA原子操作） ----------------
@@ -397,6 +396,9 @@ int RdmaBF_Cli_lookup(struct RdmaBF_Cli *rdma_bf, uint64_t key) {
         return 0;
     }
 
+    if (!flag_found) {
+        break;
+    }
     }
     return flag_found;
 }
@@ -432,6 +434,30 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
     ibv_device **dev_list = ibv_get_device_list(NULL);
     rdma_bf->ctx = ibv_open_device(dev_list[0]);
     rdma_bf->pd = ibv_alloc_pd(rdma_bf->ctx);
+
+    // 2. 创建 Completion Queue 和 Queue Pair
+    rdma_bf->cq = ibv_create_cq(rdma_bf->ctx, 16, NULL, NULL, 0);
+    rdma_bf->qp_list = (ibv_qp **)calloc(client_count, sizeof(ibv_qp *));
+    ibv_qp_init_attr qp_init_attr = {};
+    qp_init_attr.send_cq = rdma_bf->cq;
+    qp_init_attr.recv_cq = rdma_bf->cq;
+    qp_init_attr.qp_type = IBV_QPT_RC;
+    qp_init_attr.cap.max_send_wr = 10;
+    qp_init_attr.cap.max_recv_wr = 10;
+    qp_init_attr.cap.max_send_sge = 1;
+    qp_init_attr.cap.max_recv_sge = 1;
+    for (int i = 0; i < client_count; ++i) {
+        rdma_bf->qp_list[i] = ibv_create_qp(rdma_bf->pd, &qp_init_attr);
+    }
+    // 3. 初始化 QP 到 INIT
+    ibv_qp_attr attr = {};
+    attr.qp_state = IBV_QPS_INIT;
+    attr.port_num = 1;
+    attr.pkey_index = 0;
+    attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC;
+    for (int i = 0; i < client_count; ++i) {
+        ibv_modify_qp(rdma_bf->qp_list[i], &attr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS);
+    }
 
     rdma_conn_info local_info = {};
     local_info.psn = lrand48() & 0xffffff;
@@ -469,6 +495,8 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
 
     // 5. 建立 TCP 监听用于交换 GID 和 QPN
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     sockaddr_in addr = {};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(TCP_PORT);
@@ -476,7 +504,6 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
 
     if (bind(listen_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind failed");
-        fprintf(stderr, "bind failed");
         exit(1);
     }
 
@@ -495,16 +522,45 @@ void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int
         }
         std::cout << "[Server] connected client: " << i + 1 << '/' << client_count << std::endl;
         rdma_bf->sockfd_list[i] = client_fd;
+        local_info.qp_num = rdma_bf->qp_list[i]->qp_num;
         reliable_send(client_fd, &local_info, sizeof(local_info));
         reliable_recv(client_fd, &rdma_bf->remote_info_list[i], sizeof(rdma_bf->remote_info_list[i]));
+    }
+
+    // 7. 修改 QP 到 RTR
+    ibv_qp_attr rtr_attr = {};
+    rtr_attr.qp_state = IBV_QPS_RTR;
+    rtr_attr.path_mtu = IBV_MTU_1024;
+    rtr_attr.max_dest_rd_atomic = 1;
+    rtr_attr.min_rnr_timer = 12;
+    rtr_attr.ah_attr.is_global = 1;
+    rtr_attr.ah_attr.grh.sgid_index = GID_INDEX;
+    rtr_attr.ah_attr.grh.hop_limit = 1;
+    rtr_attr.ah_attr.port_num = 1;
+    for (int i = 0; i < client_count; i++) {
+        rtr_attr.dest_qp_num = rdma_bf->remote_info_list[i].qp_num;
+        rtr_attr.rq_psn = rdma_bf->remote_info_list[i].psn;
+        rtr_attr.ah_attr.grh.dgid = rdma_bf->remote_info_list[i].gid;
+
+        ibv_modify_qp(rdma_bf->qp_list[i], &rtr_attr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
+    }
+    
+    // 8. 修改 QP 到 RTS
+    ibv_qp_attr rts_attr = {};
+    rts_attr.qp_state = IBV_QPS_RTS;
+    rts_attr.timeout = 14;
+    rts_attr.retry_cnt = 7;
+    rts_attr.rnr_retry = 7;
+    rts_attr.sq_psn = local_info.psn;
+    rts_attr.max_rd_atomic = 1;
+    for (int i = 0; i < client_count; i++) {
+        ibv_modify_qp(rdma_bf->qp_list[i], &rts_attr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC);
     }
 
     for (int i = 0; i < client_count; i++) {
         reliable_send(rdma_bf->sockfd_list[i], "READY", 6);
     }
-
     std::cout << "[Server] Initialization successfully!" << std::endl;
-
     return;
 }
 

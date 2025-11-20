@@ -6,16 +6,25 @@ scp -r -i "C:\Users\Yuandu\.ssh\id_rsa" -P 10131 src test CMakeLists.txt build r
 cmake -DTOGGLE_RDMA=OFF ..
 
 美国机器
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd204.utah.cloudlab.us
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd141.utah.cloudlab.us
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd183.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd123.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd112.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd102.utah.cloudlab.us
 
-scp -r src test CMakeLists.txt build yunchuan@amd204.utah.cloudlab.us:exp01
-scp -r src test CMakeLists.txt build yunchuan@amd141.utah.cloudlab.us:exp01
-scp -r src test CMakeLists.txt build yunchuan@amd183.utah.cloudlab.us:exp01
+scp -r src test CMakeLists.txt build yunchuan@amd123.utah.cloudlab.us:exp01
+scp -r src test CMakeLists.txt build yunchuan@amd112.utah.cloudlab.us:exp01
+scp -r src test CMakeLists.txt build yunchuan@amd102.utah.cloudlab.us:exp01
 
 sudo apt update
 sudo apt install cmake libibverbs-dev rdma-core librdmacm1 librdmacm-dev ibverbs-utils infiniband-diags perftest linux-tools-common linux-tools-generic linux-cloud-tools-generic
+mkdir exp01
+
+ssh yunchuan@ms0936.utah.cloudlab.us
+ssh yunchuan@ms0914.utah.cloudlab.us
+ssh yunchuan@ms0910.utah.cloudlab.us
+
+ssh yunchuan@amd109.utah.cloudlab.us
+ssh yunchuan@amd102.utah.cloudlab.us
+ssh yunchuan@amd112.utah.cloudlab.us
 
 ./test/1_test
 ./test/2_srv
@@ -98,3 +107,6 @@ ibm8335, r7525, r650, r6525, nvidiagh, r6615
 更新：在旧版本的基础上，为server添加创建锁列表、连接多client的功能，然后删去cq和qp，client基本没有改变，然后运行时就报了retry exceeded，因此怀疑是删去cq和qp的问题。
 更新：再回退，只添加创建锁列表、连接多client的功能，不删去cq和qp，再次运行就正常。因此更确信是删去cq和qp的问题，不过暂不清楚原理。
 定位问题：本来正常的代码，仅仅注释掉server里把qp.qp_num传给client的代码时，就出现了retry exceeded。但是还不了解原理。
+原理：问题在于rdma连接必须要两边都有qp，即使被单边访问的一端不往qp里进行请求。rdma连接里一个机器的qp对应另一个机器的qp，所以有多个机器就要多个qp。所以server要给每个client创建一个qp，各自连接，不过cq可以不用多个，共用一个就行。已解决。
+
+

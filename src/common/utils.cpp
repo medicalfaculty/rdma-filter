@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <iostream>
 #include "utils.h"
 
 std::vector<uint64_t> GenerateRandom64Cuckoo(std::size_t count) {
@@ -39,12 +40,12 @@ std::vector<uint64_t> GenerateRandom64(std::size_t count) {
 //     return vals;
 // }
 
-int reliable_send(int sockfd, const void *data, size_t length) {
-    size_t total_sent = 0;
+int reliable_send(int sockfd, const void *data, std::size_t length) {
+    std::size_t total_sent = 0;
     const char *buffer = static_cast<const char *>(data);
 
     while (total_sent < length) {
-        size_t sent = send(sockfd, buffer + total_sent, length - total_sent, 0);
+        std::size_t sent = send(sockfd, buffer + total_sent, length - total_sent, 0);
         if (sent < 0) {
             if (errno == EINTR) continue; // 被信号中断，重试
                 perror("send failed");
@@ -59,12 +60,12 @@ int reliable_send(int sockfd, const void *data, size_t length) {
     return total_sent;
 }
 
-int reliable_recv(int sockfd, void *data, size_t length) {
-    size_t total_received = 0;
+int reliable_recv(int sockfd, void *data, std::size_t length) {
+    std::size_t total_received = 0;
     char *buffer = static_cast<char *>(data);
 
     while (total_received < length) {
-        size_t received = recv(sockfd, buffer + total_received, length - total_received, 0);
+        std::size_t received = recv(sockfd, buffer + total_received, length - total_received, 0);
         if (received < 0) {
             if (errno == EINTR) continue; // 被信号中断，重试
                 perror("recv failed");

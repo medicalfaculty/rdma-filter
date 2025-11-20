@@ -6,19 +6,18 @@
 #include <iostream>
 
 #define INSERT_COUNT (1 << 26)
-#define FALSE_POSITIVE_RATE (double)1.0 / 512
-#define CLIENT_COUNT 1
+#define FALSE_POSITIVE_RATE ((double)1.0 / 512)
+#define CLIENT_COUNT (2)
 
 int main(int argc, char **argv) {
     char cmd[16];
-
-
 
     struct RdmaBF_Srv rdma_bf_srv;
     RdmaBF_Srv_init(&rdma_bf_srv, INSERT_COUNT, FALSE_POSITIVE_RATE, CLIENT_COUNT);
 
     for (int i = 0; i < CLIENT_COUNT; i++) {
         reliable_recv(rdma_bf_srv.sockfd_list[i], cmd, 5);
+        std::cout << "[Server] Received close message from client: " << i + 1 << "/" << CLIENT_COUNT << std::endl;
     }
 
     RdmaBF_Srv_destroy(&rdma_bf_srv);
