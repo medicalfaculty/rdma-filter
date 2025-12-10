@@ -1,3 +1,5 @@
+## SepHash源码
+
 ### client初始化rdma连接
 
 1. `malloc`开辟空间
@@ -32,7 +34,7 @@
    
    ​	4-4-1. 创建`mr`
    
-   ​	4-4-2. `query_remomte_mr`
+   ​	4-4-2. `query_remote_mr`
    
    ​	4-4-3. `run`
    

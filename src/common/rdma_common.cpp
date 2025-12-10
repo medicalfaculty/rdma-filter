@@ -1,0 +1,167 @@
+#include "rdma_common.h"
+#include "utils.h"
+#include <cstdio>
+#include <string>
+
+ibv_qp *create_rc_qp(ibv_pd *pd, ibv_cq *cq) {
+    ibv_qp_init_attr qp_init_attr = {};
+    qp_init_attr.send_cq = cq;
+    qp_init_attr.recv_cq = cq;
+    qp_init_attr.qp_type = IBV_QPT_RC;
+    qp_init_attr.cap.max_send_wr = 10;
+    qp_init_attr.cap.max_recv_wr = 10;
+    qp_init_attr.cap.max_send_sge = 1;
+    qp_init_attr.cap.max_recv_sge = 1;
+
+    ibv_qp *qp = ibv_create_qp(pd, &qp_init_attr);
+    assert_else(qp != nullptr, "Failed to create QP");
+    return qp;
+}
+
+// flag: remote_write, remote_read, remote_atomic
+int modify_init_qp(ibv_qp *qp, uint8_t port) {
+    ibv_qp_attr attr = {};
+    attr.qp_state = IBV_QPS_INIT;
+    // 网卡端口 1 默认走的是控制网络，2 才是数据网络
+    attr.port_num = port;
+    attr.pkey_index = 0;
+    attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC;
+    return ibv_modify_qp(qp, &attr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS);
+}
+
+int modify_rtr_qp(ibv_qp* qp, uint32_t remote_qpn, uint32_t remote_psn, const union ibv_gid& remote_gid, uint8_t sgid_index, uint8_t port) {
+    ibv_qp_attr attr = {};
+    attr.qp_state = IBV_QPS_RTR;
+    attr.path_mtu = IBV_MTU_1024;
+    attr.dest_qp_num = remote_qpn;
+    attr.rq_psn = remote_psn;
+    attr.max_dest_rd_atomic = 1;    // 典型值 1，足够处理对端读/原子操作
+    attr.min_rnr_timer = 12;        // 典型值 12，约 0.5ms RNR NAK 重试间隔
+    
+    // 填充地址向量（Address Vector）
+    attr.ah_attr.is_global = 1;
+    attr.ah_attr.grh.dgid = remote_gid;
+    attr.ah_attr.grh.sgid_index = sgid_index;
+    attr.ah_attr.grh.hop_limit = 1;
+    attr.ah_attr.port_num = port;
+    
+    int mask = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
+    
+    return ibv_modify_qp(qp, &attr, mask);
+}
+
+int modify_rts_qp(ibv_qp* qp, uint32_t sq_psn) {
+    ibv_qp_attr attr = {};
+    attr.qp_state = IBV_QPS_RTS;
+    attr.timeout = 14;               // 典型值 14，约 8ms 超时
+    attr.retry_cnt = 7;              // 典型值 7，最大重试次数
+    attr.rnr_retry = 7;              // 典型值 7，最大 RNR NAK 重试次数
+    attr.sq_psn = sq_psn;            // 本地发送队列初始 PSN
+    attr.max_rd_atomic = 1;          // 典型值 1，足够处理本地读/原子操作响应
+
+    int mask = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+
+    return ibv_modify_qp(qp, &attr, mask);
+}
+
+ibv_sge *create_sge(ibv_mr* mr) {
+    ibv_sge *sge = new ibv_sge();
+    sge->addr = (uintptr_t)mr->addr;
+    sge->length = mr->length;
+    sge->lkey = mr->lkey;
+    return sge;
+}
+
+rdma_conn_info *create_local_info(ibv_context *ctx, uint8_t port, uint8_t gid_index) {
+    rdma_conn_info *local_info = new rdma_conn_info();
+    local_info->psn = lrand48() & 0xffffff;
+
+    ibv_gid tmp_gid;
+    ibv_query_gid(ctx, port, gid_index, &tmp_gid);
+    memcpy(&local_info->gid, &tmp_gid, sizeof(ibv_gid));
+
+    return local_info;
+}
+
+int rdma_one_side(ibv_qp *qp, int wr_id, ibv_sge *sge, uint64_t remote_addr, uint32_t rkey, ibv_wr_opcode opcode) {
+    ibv_send_wr wr = {};
+    wr.wr_id = wr_id;
+    wr.opcode = opcode;
+    wr.sg_list = sge;
+    wr.num_sge = 1;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.wr.rdma.remote_addr = remote_addr;
+    wr.wr.rdma.rkey = rkey;
+
+    ibv_send_wr *bad_wr;
+    if (ibv_post_send(qp, &wr, &bad_wr) != 0) {
+        assert_else(false, "ibv_post_send (RDMA READ) failed");
+        return 0;
+    }
+    return 1;
+}
+
+int check_cq(ibv_cq *cq, int wr_id) {
+    ibv_wc wc;
+    while (ibv_poll_cq(cq, wr_id, &wc) < 1);
+    if (wc.status != IBV_WC_SUCCESS) {
+        assert_else(false, "RDMA READ failed: " + std::string(ibv_wc_status_str(wc.status)));
+        return 0;
+    }
+    return 1;
+}
+
+// compare_add: 旧期望值, swap: 新交换值
+int rdma_atomic_cas(ibv_qp *qp, int wr_id, ibv_sge *sge, ibv_cq *cq, uint64_t remote_addr, uint32_t rkey, uint64_t compare_add, uint64_t swap) {
+    ibv_send_wr wr = {};
+    wr.wr_id = wr_id;
+    wr.opcode = IBV_WR_ATOMIC_CMP_AND_SWP;
+    wr.sg_list = sge;
+    wr.num_sge = 1;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.wr.atomic.remote_addr = remote_addr;
+    wr.wr.atomic.rkey = rkey;
+    wr.wr.atomic.compare_add = compare_add;
+    wr.wr.atomic.swap = swap;
+
+    *((uint64_t *)(sge->addr)) = compare_add + 1;
+
+    ibv_send_wr *bad_wr;
+    ibv_wc wc;
+    // 自旋直到获取锁
+    while (1) {
+        if (ibv_post_send(qp, &wr, &bad_wr)) {
+            assert_else(false, "ibv_post_send (CAS lock) failed");
+            return 0;
+        }
+        while (ibv_poll_cq(cq, wr_id, &wc) < 1);
+        if (wc.status != IBV_WC_SUCCESS) {
+            assert_else(false, "CAS lock failed: " + std::string(ibv_wc_status_str(wc.status)));
+            return 0;
+        }
+        // 如果返回值为 compare_add，说明成功获取锁
+        if (*((uint64_t *)(sge->addr)) == compare_add) break;
+        else usleep(100 + rand() % 200);
+    }
+    return 1;
+}
+
+ibv_context *open_rdma_ctx(const char* name_dev) {
+    int num_devices = 0, index_device = 0;
+    ibv_device **dev_list = ibv_get_device_list(&num_devices);
+    if (num_devices <= 0) {
+        assert_else(false, "No RDMA devices found");
+        exit(1);
+    }
+    for (; index_device < num_devices; ++index_device) {
+        ibv_device *dev = dev_list[index_device];
+        if (strcmp(dev->name, name_dev) == 0) break;
+    }
+    if (index_device == num_devices) {
+        assert_else(false, "Selected RDMA device not found");
+        index_device = 0; // 默认使用第一个设备
+    }
+    ibv_context *ctx = ibv_open_device(dev_list[index_device]);
+    ibv_free_device_list(dev_list);
+    return ctx;
+}

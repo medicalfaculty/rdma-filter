@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// block_size in bytes
 struct DramBBF
 {
     unsigned int m;

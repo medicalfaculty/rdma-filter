@@ -1,5 +1,6 @@
 #include "rdma_bbf.h"
 #include "murmur3.h"
+#include "utils.h"
 
 #include <iostream>
 #include <math.h>
@@ -12,112 +13,85 @@ using namespace std;
 #define bit_get(v, n) ((v)[(n) >> 3] & (0x1 << (0x7 - ((n)&0x7))))
 #define bit_clr(v, n) ((v)[(n) >> 3] &= ~(0x1 << (0x7 - ((n)&0x7))))
 
-#define TCP_PORT 18515       // 端口号用于 TCP 元数据交换
-#define GID_INDEX 3
-#define SEED 2568
+#define SEED (2568)
 
-void RdmaBBF_Cli_init(struct RdmaBBF_Cli *rdma_bbf, unsigned int n, double fpr, unsigned int block_size, const char* server_ip)
+
+void RdmaBBF_Cli_init(struct RdmaBBF_Cli *rdma_bbf, unsigned int n, double fpr, unsigned int block_size, const char* server_ip, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index, uint32_t mutex_gran_block)
 {
+    memset(rdma_bbf, 0, sizeof(*rdma_bbf));
+
     double m = ((-1.0) * n * log(fpr)) / ((log(2)) * (log(2)));
     double k = (1.0 * m * log(2)) / n;
-
-    memset(rdma_bbf, 0, sizeof(*rdma_bbf));
     rdma_bbf->m = ((int(m) >> 3) + 1) << 3;
     rdma_bbf->k = ceil(k);
-    rdma_bbf->block_size = block_size;
-    rdma_bbf->block_count = rdma_bbf->m / (rdma_bbf->block_size << 3);
+    rdma_bbf->mutex_gran_block = mutex_gran_block;
 
-    ibv_device **dev_list = ibv_get_device_list(NULL);
-    rdma_bbf->ctx = ibv_open_device(dev_list[0]);
+    rdma_bbf->block_size = block_size;
+    rdma_bbf->block_count = rdma_bbf->m / (block_size << 3);
+
+    // 打开 ctx 和 注册 pd 和 cq
+    rdma_bbf->ctx = open_rdma_ctx(name_dev);
     rdma_bbf->pd = ibv_alloc_pd(rdma_bbf->ctx);
     rdma_bbf->cq = ibv_create_cq(rdma_bbf->ctx, 16, NULL, NULL, 0);
 
-    ibv_qp_init_attr qp_init_attr = {};
-    qp_init_attr.send_cq = rdma_bbf->cq;
-    qp_init_attr.recv_cq = rdma_bbf->cq;
-    qp_init_attr.qp_type = IBV_QPT_RC;
-    qp_init_attr.cap.max_send_wr = 10;
-    qp_init_attr.cap.max_recv_wr = 10;
-    qp_init_attr.cap.max_send_sge = 1;
-    qp_init_attr.cap.max_recv_sge = 1;
-    rdma_bbf->qp = ibv_create_qp(rdma_bbf->pd, &qp_init_attr);
+    // 分配两个 buffer 内存
+    rdma_bbf->local_buf = (uint8_t *)malloc(1);
+    int ret_posix = posix_memalign((void**)&rdma_bbf->mutex_buf, 8, 8);
+    assert_else(ret_posix == 0, "posix_memalign failed for mutex_buf");
+    
+    // 注册两个 mr
+    rdma_bbf->local_mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->local_buf, 1, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
+    assert_else(rdma_bbf->local_mr != nullptr, "ibv_reg_mr for local_mr failed");
 
-    ibv_qp_attr attr = {};
-    attr.qp_state = IBV_QPS_INIT;
-    attr.port_num = 1;
-    attr.pkey_index = 0;
-    attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-    ibv_modify_qp(rdma_bbf->qp, &attr,
-        IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS);
+    rdma_bbf->mutex_mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->mutex_buf, 8, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_ATOMIC);
+    assert_else(rdma_bbf->mutex_mr != nullptr, "ibv_reg_mr for mutex_mr failed");
+    // 注册两个 sge
+    rdma_bbf->buffer_sge = create_sge(rdma_bbf->local_mr);
+    rdma_bbf->mutex_sge = create_sge(rdma_bbf->mutex_mr);
 
-    rdma_conn_info local_info = {};
-    local_info.qp_num = rdma_bbf->qp->qp_num;
-    local_info.psn = lrand48() & 0xffffff;
+    // 创建 qp 并改到 init 状态
+    rdma_bbf->qp = create_rc_qp(rdma_bbf->pd, rdma_bbf->cq);
+    modify_init_qp(rdma_bbf->qp, rnic_port);
 
-    // 使用临时变量获取对齐的 GID
-    ibv_gid tmp_gid;
-    ibv_query_gid(rdma_bbf->ctx, 1, GID_INDEX, &tmp_gid);
-    // 拷贝到结构体成员，避免直接传非对齐指针
-    memcpy(&local_info.gid, &tmp_gid, sizeof(ibv_gid));
+    // 创建 local info
+    rdma_conn_info *local_info = create_local_info(rdma_bbf->ctx, rnic_port, gid_index);
+    local_info->qp_num = rdma_bbf->qp->qp_num;
 
-    // 连接到服务器交换信息
+    // 建立 tcp 连接
     rdma_bbf->sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in addr = {};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(TCP_PORT);
-    inet_pton(AF_INET, server_ip, &addr.sin_addr);
-    connect(rdma_bbf->sockfd, (sockaddr*)&addr, sizeof(addr));
-
-    rdma_bbf->remote_info = {};
-    send(rdma_bbf->sockfd, &local_info, sizeof(local_info), 0);
-    recv(rdma_bbf->sockfd, &rdma_bbf->remote_info, sizeof(rdma_bbf->remote_info), 0);
-    // close(sockfd);
-
-    // 设置 QP -> RTR
-    ibv_qp_attr rtr_attr = {};
-    rtr_attr.qp_state = IBV_QPS_RTR;
-    rtr_attr.path_mtu = IBV_MTU_1024;
-    rtr_attr.dest_qp_num = rdma_bbf->remote_info.qp_num;
-    rtr_attr.rq_psn = rdma_bbf->remote_info.psn;
-    rtr_attr.max_dest_rd_atomic = 1;
-    rtr_attr.min_rnr_timer = 12;
-    rtr_attr.ah_attr.is_global = 1;
-    rtr_attr.ah_attr.grh.dgid = rdma_bbf->remote_info.gid;
-    rtr_attr.ah_attr.grh.sgid_index = GID_INDEX;
-    rtr_attr.ah_attr.grh.hop_limit = 1;
-    rtr_attr.ah_attr.port_num = 1;
-    ibv_modify_qp(rdma_bbf->qp, &rtr_attr,
-        IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
-        IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
-        IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
-
-    // 设置 QP -> RTS
-    ibv_qp_attr rts_attr = {};
-    rts_attr.qp_state = IBV_QPS_RTS;
-    rts_attr.timeout = 14;
-    rts_attr.retry_cnt = 7;
-    rts_attr.rnr_retry = 7;
-    rts_attr.sq_psn = local_info.psn;
-    rts_attr.max_rd_atomic = 1;
-    ibv_modify_qp(rdma_bbf->qp, &rts_attr,
-        IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
-        IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC);
-
-    // 注册内存
-    rdma_bbf->local_buf = (uint8_t *)malloc(block_size);
-    rdma_bbf->local_mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->local_buf, block_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
-
-    if (!rdma_bbf->local_mr) {
-        fprintf(stderr, "ibv_reg_mr");
+    sockaddr_in sock_addr = {};
+    sock_addr.sin_family = AF_INET;
+    sock_addr.sin_port = htons(tcp_port);
+    inet_pton(AF_INET, server_ip, &sock_addr.sin_addr);
+    std::cout << "[Client] Connecting to server at " << server_ip << "..." << std::endl;
+    int return_connect = 1;
+    while (return_connect != 0) {
+        return_connect = connect(rdma_bbf->sockfd, (sockaddr*)&sock_addr, sizeof(sock_addr));
+        if (return_connect < 0) sleep(1);
     }
+    std::cout << "[Client] Connected to server at " << server_ip << std::endl;
+    // 交换信息
+    rdma_bbf->remote_info = {};
+    reliable_send(rdma_bbf->sockfd, local_info, sizeof(rdma_conn_info));
+    reliable_recv(rdma_bbf->sockfd, &rdma_bbf->remote_info, sizeof(rdma_conn_info));
 
-    std::cout << "[Client] RDMA connection established successfully!" << std::endl;
+    // 设置 QP 到 RTR 再到 RTS
+    modify_rtr_qp(rdma_bbf->qp, rdma_bbf->remote_info.qp_num, rdma_bbf->remote_info.psn, rdma_bbf->remote_info.gid, gid_index, rnic_port);
+    modify_rts_qp(rdma_bbf->qp, local_info->psn);
+
+    char cmd[6];
+    reliable_recv(rdma_bbf->sockfd, cmd, 6);
+    std::cout << "[Client] Initialization successfully!" << std::endl;
     return;
 }
 
 void RdmaBBF_Cli_destroy(struct RdmaBBF_Cli *rdma_bbf) {
     if (rdma_bbf->local_mr) ibv_dereg_mr(rdma_bbf->local_mr);
     if (rdma_bbf->local_buf) free(rdma_bbf->local_buf);
+    if (rdma_bbf->mutex_mr) ibv_dereg_mr(rdma_bbf->mutex_mr);
+    if (rdma_bbf->mutex_buf) free(rdma_bbf->mutex_buf);
+    if (rdma_bbf->buffer_sge) free(rdma_bbf->buffer_sge);
+    if (rdma_bbf->mutex_sge) free(rdma_bbf->mutex_sge);
     if (rdma_bbf->qp) ibv_destroy_qp(rdma_bbf->qp);
     if (rdma_bbf->cq) ibv_destroy_cq(rdma_bbf->cq);
     if (rdma_bbf->pd) ibv_dealloc_pd(rdma_bbf->pd);
@@ -132,65 +106,29 @@ int RdmaBBF_Cli_insert(struct RdmaBBF_Cli *rdma_bbf, uint64_t key) {
     murmur3_hash32(&key, 8, SEED, &hash);
     uint32_t block_index = hash % rdma_bbf->block_count;
     uint32_t block_offset = block_index * rdma_bbf->block_size;
+    uint32_t mutex_index = block_index / rdma_bbf->mutex_gran_block;
 
-    // ---------------- RDMA READ ----------------
-    ibv_sge sge = {};
-    sge.addr = (uintptr_t)rdma_bbf->local_buf;
-    sge.length = rdma_bbf->block_size;
-    sge.lkey = rdma_bbf->local_mr->lkey;
+    // 加锁（使用RDMA CAS原子操作）
+    rdma_atomic_cas(rdma_bbf->qp, 100, rdma_bbf->mutex_sge, rdma_bbf->cq, rdma_bbf->remote_info.mutex_addr + mutex_index * sizeof(uint64_t), rdma_bbf->remote_info.mutex_rkey, 0, 1);
 
-    ibv_send_wr wr = {};
-    wr.wr_id = 1; // 用于 poll_cq 识别
-    wr.opcode = IBV_WR_RDMA_READ;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.send_flags = IBV_SEND_SIGNALED;
-    wr.wr.rdma.remote_addr = rdma_bbf->remote_info.remote_addr + block_offset;
-    wr.wr.rdma.rkey = rdma_bbf->remote_info.rkey;
+    // RDMA READ
+    rdma_one_side(rdma_bbf->qp, 1, rdma_bbf->buffer_sge, rdma_bbf->remote_info.remote_addr + block_offset, rdma_bbf->remote_info.rkey, IBV_WR_RDMA_READ);
+    check_cq(rdma_bbf->cq, 1);
 
-    ibv_send_wr *bad_wr;
-    if (ibv_post_send(rdma_bbf->qp, &wr, &bad_wr)) {
-        fprintf(stderr, "ibv_post_send (RDMA READ)");
-        return 1;
-    }
-
-    // 等待完成事件（poll cq）
-    ibv_wc wc;
-    while (ibv_poll_cq(rdma_bbf->cq, 1, &wc) < 1);
-    if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "RDMA READ failed: %s\n", ibv_wc_status_str(wc.status));
-        return 1;
-    }
-
-    // ---------------- Modify in place ----------------
+    // Modify in place
     for (int i = 0; i < rdma_bbf->k; ++i) {
         murmur3_hash32(&key, 8, i, &hash_);
         bit_set(rdma_bbf->local_buf, hash_ % (rdma_bbf->block_size << 3));
     }
 
-    // ---------------- RDMA WRITE ----------------
-    sge.addr = (uintptr_t)rdma_bbf->local_buf;
-    sge.length = rdma_bbf->block_size;
-    sge.lkey = rdma_bbf->local_mr->lkey;
+    // RDMA WRITE
+    rdma_one_side(rdma_bbf->qp, 2, rdma_bbf->buffer_sge, rdma_bbf->remote_info.remote_addr + block_offset, rdma_bbf->remote_info.rkey, IBV_WR_RDMA_WRITE);
+    check_cq(rdma_bbf->cq, 2);
 
-    wr.wr_id = 2; // 用于 poll_cq 识别
-    wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.send_flags = IBV_SEND_SIGNALED;
-    wr.wr.rdma.remote_addr = rdma_bbf->remote_info.remote_addr + block_offset;
-    wr.wr.rdma.rkey = rdma_bbf->remote_info.rkey;
-
-    if (ibv_post_send(rdma_bbf->qp, &wr, &bad_wr)) {
-        fprintf(stderr, "ibv_post_send (RDMA WRITE)");
-        return 1;
-    }
-
-    // 等待完成事件（poll cq）
-    while (ibv_poll_cq(rdma_bbf->cq, 1, &wc) < 1);
-    if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "RDMA WRITE failed: %s\n", ibv_wc_status_str(wc.status));
-    }
+    // 解锁（不使用CAS原子操作）
+    *(uint64_t*)rdma_bbf->mutex_buf = 0;  // 设置交换值为0（解锁）
+    rdma_one_side(rdma_bbf->qp, 101, rdma_bbf->mutex_sge, rdma_bbf->remote_info.mutex_addr + mutex_index * sizeof(uint64_t), rdma_bbf->remote_info.mutex_rkey, IBV_WR_RDMA_WRITE);
+    check_cq(rdma_bbf->cq, 101);
 
     return 1;
 }
@@ -201,167 +139,143 @@ int RdmaBBF_Cli_lookup(struct RdmaBBF_Cli *rdma_bbf, uint64_t key) {
     murmur3_hash32(&key, 8, SEED, &hash);
     uint32_t block_index = hash % rdma_bbf->block_count;
     uint32_t block_offset = block_index * rdma_bbf->block_size;
+    uint32_t mutex_index = block_index / rdma_bbf->mutex_gran_block;
+    int flag_found = 1;
 
-    // ---------- RDMA READ ----------
-    ibv_sge sge = {};
-    sge.addr = (uintptr_t)rdma_bbf->local_buf;
-    sge.length = rdma_bbf->block_size;
-    sge.lkey = rdma_bbf->local_mr->lkey;
+    // 加锁（使用RDMA CAS原子操作）
+    rdma_atomic_cas(rdma_bbf->qp, 100, rdma_bbf->mutex_sge, rdma_bbf->cq, rdma_bbf->remote_info.mutex_addr + mutex_index * sizeof(uint64_t), rdma_bbf->remote_info.mutex_rkey, 0, 1);
 
-    ibv_send_wr wr = {};
-    wr.wr_id = 1;
-    wr.opcode = IBV_WR_RDMA_READ;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.send_flags = IBV_SEND_SIGNALED;
-    wr.wr.rdma.remote_addr = rdma_bbf->remote_info.remote_addr + block_offset;
-    wr.wr.rdma.rkey = rdma_bbf->remote_info.rkey;
+    // RDMA READ
+    rdma_one_side(rdma_bbf->qp, 1, rdma_bbf->buffer_sge, rdma_bbf->remote_info.remote_addr + block_offset, rdma_bbf->remote_info.rkey, IBV_WR_RDMA_READ);
+    check_cq(rdma_bbf->cq, 1);
 
-    ibv_send_wr *bad_wr;
-    if (ibv_post_send(rdma_bbf->qp, &wr, &bad_wr)) {
-        fprintf(stderr, "ibv_post_send (lookup)");
-        return 0;
-    }
-
-    // ---------- CQ轮询等待完成 ----------
-    ibv_wc wc = {};
-    while (ibv_poll_cq(rdma_bbf->cq, 1, &wc) < 1);
-    if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "RDMA READ failed in lookup: %s\n", ibv_wc_status_str(wc.status));
-        return 0;
-    }
-
-    // ---------- Check bit ----------
+    // Check bit
     for (int i = 0; i < rdma_bbf->k; ++i) {
         murmur3_hash32(&key, 8, i, &hash_);
         if (!bit_get(rdma_bbf->local_buf, hash_ % (rdma_bbf->block_size << 3))) {
-            return 0;
+            flag_found = 0;
+            break;
         }
     }
-    return 1;
+
+    // 解锁（不使用RDMA原子操作）
+    *(uint64_t*)rdma_bbf->mutex_buf = 0;  // 设置交换值为0（解锁）
+    rdma_one_side(rdma_bbf->qp, 101, rdma_bbf->mutex_sge, rdma_bbf->remote_info.mutex_addr + mutex_index * sizeof(uint64_t), rdma_bbf->remote_info.mutex_rkey, IBV_WR_RDMA_WRITE);
+    check_cq(rdma_bbf->cq, 101);
+
+    return flag_found;
 }
 
-void RdmaBBF_Srv_init(struct RdmaBBF_Srv *rdma_bbf, unsigned int n, double fpr) {
+void RdmaBBF_Srv_init(struct RdmaBBF_Srv *rdma_bbf, unsigned int n, double fpr, int client_count, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index, uint32_t mutex_gran_block, unsigned int block_size) {
+    memset(rdma_bbf, 0, sizeof(*rdma_bbf));
+
     double m = ((-1.0) * n * log(fpr)) / ((log(2)) * (log(2)));
     double k = (1.0 * m * log(2)) / n;
-
-    memset(rdma_bbf, 0, sizeof(*rdma_bbf));
     rdma_bbf->m = ((int(m) >> 3) + 1) << 3;
     rdma_bbf->k = ceil(k);
+    rdma_bbf->mutex_gran_block = mutex_gran_block;
+    rdma_bbf->count_clients_expected = client_count;
+
+    uint32_t mutex_count = (rdma_bbf->m >> 3) / (block_size * mutex_gran_block) + 1;
+
+    // 初始化 bit_vector 和 mutex_list
     rdma_bbf->bit_vector = (uint8_t *)calloc(rdma_bbf->m >> 3, sizeof(uint8_t));
+    int ret_posix = posix_memalign((void **)&rdma_bbf->mutex_list, 64, mutex_count * sizeof(uint64_t));
+    assert_else(ret_posix == 0, "posix_memalign failed for mutex_list");
+    memset(rdma_bbf->bit_vector, 0, rdma_bbf->m >> 3);
+    memset(rdma_bbf->mutex_list, 0, mutex_count * sizeof(uint64_t));
+    std::cout << "[Server] BF size(MB): " << rdma_bbf->m / 8 / 1024 / 1024 << std::endl;
+    std::cout << "[Server] Mutex list size(KB): " << mutex_count * sizeof(uint64_t) / 1024 << std::endl;
+    // 初始化 sockfd_list 和 remote_info_list
+    rdma_bbf->sockfd_list = (int *)calloc(client_count, sizeof(int));
+    rdma_bbf->remote_info_list = (rdma_conn_info *)calloc(client_count, sizeof(rdma_conn_info));
 
-    // 1. 获取 RDMA 设备和保护域
-    ibv_device **dev_list = ibv_get_device_list(NULL);
-    rdma_bbf->ctx = ibv_open_device(dev_list[0]);
+    // 打开 ctx 并创建 pd 和 cq
+    rdma_bbf->ctx = open_rdma_ctx(name_dev);
     rdma_bbf->pd = ibv_alloc_pd(rdma_bbf->ctx);
-
-    // 2. 创建 Completion Queue 和 Queue Pair
     rdma_bbf->cq = ibv_create_cq(rdma_bbf->ctx, 16, NULL, NULL, 0);
-    ibv_qp_init_attr qp_init_attr = {};
-    qp_init_attr.send_cq = rdma_bbf->cq;
-    qp_init_attr.recv_cq = rdma_bbf->cq;
-    qp_init_attr.qp_type = IBV_QPT_RC;
-    qp_init_attr.cap.max_send_wr = 10;
-    qp_init_attr.cap.max_recv_wr = 10;
-    qp_init_attr.cap.max_send_sge = 1;
-    qp_init_attr.cap.max_recv_sge = 1;
-    rdma_bbf->qp = ibv_create_qp(rdma_bbf->pd, &qp_init_attr);
 
-    // 3. 初始化 QP 到 INIT
-    ibv_qp_attr attr = {};
-    attr.qp_state = IBV_QPS_INIT;
-    attr.port_num = 1;
-    attr.pkey_index = 0;
-    attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
-    ibv_modify_qp(rdma_bbf->qp, &attr,
-        IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS);
+    // 注册两个 mr
+    rdma_bbf->mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->bit_vector, rdma_bbf->m >> 3,IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE);
+    rdma_bbf->mutex_mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->mutex_list, mutex_count * sizeof(uint64_t), IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_ATOMIC);
+    assert_else(rdma_bbf->mr != nullptr, "ibv_reg_mr for bit_vector failed");
+    assert_else(rdma_bbf->mutex_mr != nullptr, "ibv_reg_mr for mutex_mr failed");
 
-    rdma_conn_info local_info = {};
-    local_info.qp_num = rdma_bbf->qp->qp_num;
-    local_info.psn = lrand48() & 0xffffff;
+    // 初始化 qp_list
+    rdma_bbf->qp_list = (ibv_qp **)calloc(client_count, sizeof(ibv_qp *));
+    for (int i = 0; i < client_count; ++i) {
+        rdma_bbf->qp_list[i] = create_rc_qp(rdma_bbf->pd, rdma_bbf->cq);
+        modify_init_qp(rdma_bbf->qp_list[i], rnic_port);
+    }
 
-    // 注册内存区域
-    rdma_bbf->mr = ibv_reg_mr(rdma_bbf->pd, rdma_bbf->bit_vector, rdma_bbf->m >> 3,
-        IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE);
-
-    if (!rdma_bbf->mr) {
-        fprintf(stderr, "ibv_reg_mr failed");
-        return;
-    }    
-    
+    // 创建 local_info
+    rdma_conn_info *local_info = create_local_info(rdma_bbf->ctx, rnic_port, gid_index);
     // 将地址和rkey加入连接信息中
-    local_info.remote_addr = (uintptr_t)rdma_bbf->bit_vector;
-    local_info.rkey = rdma_bbf->mr->rkey;
+    local_info->remote_addr = (uintptr_t)rdma_bbf->bit_vector;
+    local_info->rkey = rdma_bbf->mr->rkey;
+    local_info->mutex_addr = (uintptr_t)rdma_bbf->mutex_list;
+    local_info->mutex_rkey = rdma_bbf->mutex_mr->rkey;
 
-    // 4. 获取 GID
-    // 使用临时变量获取对齐的 GID
-    ibv_gid tmp_gid;
-    ibv_query_gid(rdma_bbf->ctx, 1, GID_INDEX, &tmp_gid);
-    // 拷贝到结构体成员，避免直接传非对齐指针
-    memcpy(&local_info.gid, &tmp_gid, sizeof(ibv_gid));
-
-    // 5. 建立 TCP 监听用于交换 GID 和 QPN
+    // 开放 TCP 监听
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     sockaddr_in addr = {};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(TCP_PORT);
+    addr.sin_port = htons(tcp_port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     bind(listen_fd, (sockaddr*)&addr, sizeof(addr));
+    auto bind_result = bind(listen_fd, (sockaddr*)&addr, sizeof(addr));
+    assert_else(bind_result == 0, "Server bind TCP failed");
+    std::cout << "[Server] Listening for client TCP connections..." << std::endl;
 
-    std::cout << "[Server] Waiting for client TCP connection..." << std::endl;
-    listen(listen_fd, 1);
-    rdma_bbf->sockfd = accept(listen_fd, NULL, NULL);
+    auto listen_result = listen(listen_fd, client_count);
+    assert_else(listen_result == 0, "Server listen TCP failed");
 
-    // 6. 交换连接信息
-    rdma_conn_info remote_info = {};
-    send(rdma_bbf->sockfd, &local_info, sizeof(local_info), 0);
-    recv(rdma_bbf->sockfd, &remote_info, sizeof(remote_info), 0);
+    // 建立连接 和 交换信息
+    for (int i = 0; i < client_count; i++) {
+        int client_fd = accept(listen_fd, NULL, NULL);
+        assert_else(client_fd >= 0, "accept failed");
+        rdma_bbf->sockfd_list[i] = client_fd;
+        local_info->qp_num = rdma_bbf->qp_list[i]->qp_num;
+        reliable_send(client_fd, local_info, sizeof(rdma_conn_info));
+        reliable_recv(client_fd, &rdma_bbf->remote_info_list[i], sizeof(rdma_conn_info));
 
-    // 7. 修改 QP 到 RTR
-    ibv_qp_attr rtr_attr = {};
-    rtr_attr.qp_state = IBV_QPS_RTR;
-    rtr_attr.path_mtu = IBV_MTU_1024;
-    rtr_attr.dest_qp_num = remote_info.qp_num;
-    rtr_attr.rq_psn = remote_info.psn;
-    rtr_attr.max_dest_rd_atomic = 1;
-    rtr_attr.min_rnr_timer = 12;
-    rtr_attr.ah_attr.is_global = 1;
-    rtr_attr.ah_attr.grh.dgid = remote_info.gid;
-    rtr_attr.ah_attr.grh.sgid_index = GID_INDEX;
-    rtr_attr.ah_attr.grh.hop_limit = 1;
-    rtr_attr.ah_attr.port_num = 1;
-    ibv_modify_qp(rdma_bbf->qp, &rtr_attr,
-        IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
-        IBV_QP_DEST_QPN | IBV_QP_RQ_PSN |
-        IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
+        std::cout << "[Server] connected client: " << i + 1 << '/' << client_count << std::endl;
+    }
 
-    // 8. 修改 QP 到 RTS
-    ibv_qp_attr rts_attr = {};
-    rts_attr.qp_state = IBV_QPS_RTS;
-    rts_attr.timeout = 14;
-    rts_attr.retry_cnt = 7;
-    rts_attr.rnr_retry = 7;
-    rts_attr.sq_psn = local_info.psn;
-    rts_attr.max_rd_atomic = 1;
-    ibv_modify_qp(rdma_bbf->qp, &rts_attr,
-        IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT |
-        IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC);
+    // 修改 QP 到 RTR 再到 RTS
+    for (int i = 0; i < client_count; i++) {
+        modify_rtr_qp(rdma_bbf->qp_list[i], rdma_bbf->remote_info_list[i].qp_num, rdma_bbf->remote_info_list[i].psn, rdma_bbf->remote_info_list[i].gid, gid_index, rnic_port);
+        modify_rts_qp(rdma_bbf->qp_list[i], local_info->psn);
+    }
 
-    std::cout << "[Server] RDMA connection established successfully!" << std::endl;
-
+    for (int i = 0; i < client_count; i++) {
+        reliable_send(rdma_bbf->sockfd_list[i], "READY", 6);
+    }
+    std::cout << "[Server] Initialization successfully!" << std::endl;
     return;
 }
 
 void RdmaBBF_Srv_destroy(struct RdmaBBF_Srv *rdma_bbf) {
     if (rdma_bbf->mr) ibv_dereg_mr(rdma_bbf->mr);
+    if (rdma_bbf->mutex_mr) ibv_dereg_mr(rdma_bbf->mutex_mr);
     if (rdma_bbf->bit_vector) free(rdma_bbf->bit_vector);
-    if (rdma_bbf->qp) ibv_destroy_qp(rdma_bbf->qp);
+    if (rdma_bbf->mutex_list) free(rdma_bbf->mutex_list);
+    for (int i = 0; i < rdma_bbf->count_clients_expected; i++) {
+        if (rdma_bbf->qp_list[i]) ibv_destroy_qp(rdma_bbf->qp_list[i]);
+    }
     if (rdma_bbf->cq) ibv_destroy_cq(rdma_bbf->cq);
     if (rdma_bbf->pd) ibv_dealloc_pd(rdma_bbf->pd);
     if (rdma_bbf->ctx) ibv_close_device(rdma_bbf->ctx);
 
-    if (rdma_bbf->sockfd) close(rdma_bbf->sockfd);
+    if (rdma_bbf->qp_list) free(rdma_bbf->qp_list);
+    for (int i = 0; i < rdma_bbf->count_clients_expected; i++) {
+        if (rdma_bbf->sockfd_list[i]) close(rdma_bbf->sockfd_list[i]);
+    }
+    if (rdma_bbf->sockfd_list) free(rdma_bbf->sockfd_list);
+    if (rdma_bbf->remote_info_list) free(rdma_bbf->remote_info_list);
 }
 
 void RdmaBBF_Srv_clear(struct RdmaBBF_Srv *rdma_bbf) {

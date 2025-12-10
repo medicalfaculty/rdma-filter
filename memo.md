@@ -4,46 +4,50 @@ cd D:\study\rdma-filter\
 ssh -i "C:\Users\Yuandu\.ssh\id_rsa" -p 10131 root@210.28.134.155
 scp -r -i "C:\Users\Yuandu\.ssh\id_rsa" -P 10131 src test CMakeLists.txt build root@210.28.134.155:liuyunchuan/exp01
 cmake -DTOGGLE_RDMA=OFF ..
+cd liuyunchuan/exp01/build
 
 美国机器
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd123.utah.cloudlab.us
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd112.utah.cloudlab.us
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@amd102.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@ms1044.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@ms1021.utah.cloudlab.us
+ssh -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@ms1038.utah.cloudlab.us
 
-scp -r src test CMakeLists.txt build yunchuan@amd123.utah.cloudlab.us:exp01
-scp -r src test CMakeLists.txt build yunchuan@amd112.utah.cloudlab.us:exp01
-scp -r src test CMakeLists.txt build yunchuan@amd102.utah.cloudlab.us:exp01
+scp -r src test build CMakeLists.txt yunchuan@ms1044.utah.cloudlab.us:exp01
+scp -r src test build CMakeLists.txt yunchuan@ms1021.utah.cloudlab.us:exp01
+scp -r src test build CMakeLists.txt yunchuan@ms1038.utah.cloudlab.us:exp01
 
-sudo apt update
-sudo apt install cmake libibverbs-dev rdma-core librdmacm1 librdmacm-dev ibverbs-utils infiniband-diags perftest linux-tools-common linux-tools-generic linux-cloud-tools-generic
 mkdir exp01
+sudo apt update
+sudo apt install cmake libibverbs-dev rdma-core librdmacm1 librdmacm-dev ibverbs-utils infiniband-diags perftest linux-tools-common linux-tools-generic linux-cloud-tools-generic tmux
 
-ssh yunchuan@ms0936.utah.cloudlab.us
-ssh yunchuan@ms0914.utah.cloudlab.us
-ssh yunchuan@ms0910.utah.cloudlab.us
+ssh yunchuan@ms1044.utah.cloudlab.us
+ssh yunchuan@ms1021.utah.cloudlab.us
+ssh yunchuan@ms1038.utah.cloudlab.us
 
-ssh yunchuan@amd109.utah.cloudlab.us
-ssh yunchuan@amd102.utah.cloudlab.us
-ssh yunchuan@amd112.utah.cloudlab.us
 
 ./test/1_test
 ./test/2_srv
 ./test/2_cli
 
 ping 10.10.1.1
-ib_send_bw -d mlx5_0
-ib_send_bw -d mlx5_0               10.10.1.1
-ib_send_bw -d mlx5_0 -D 4 -s 65536 10.10.1.1
+ib_send_bw -d mlx4_0 -i 2
+ib_send_bw -d mlx4_0 -i 2               10.10.1.1
+ib_send_bw -d mlx4_0 -i 2 -D 4 -s 65536 10.10.1.1
 
-scp src\rdma_bf\rdma_bf.h yunchuan@clnode305.clemson.cloudlab.us:exp01\src\rdma_bf
-scp test\2_cli.cpp test\2_srv.cpp yunchuan@amd204.utah.cloudlab.us:exp01\test
-scp test\2_cli.cpp test\2_srv.cpp yunchuan@clnode294.clemson.cloudlab.us:exp01\test
+
+tmux new -s t1
+[Ctrl]+[b] then [d]
+tmux ls
+tmux attach -t t1
+tmux kill-session -t t1
+
 
 查看NAT地址
-ip a
+ip addr
 
 查看网卡名
 ibstat
+或
+ib_devinfo
 
 
 
@@ -108,5 +112,9 @@ ibm8335, r7525, r650, r6525, nvidiagh, r6615
 更新：再回退，只添加创建锁列表、连接多client的功能，不删去cq和qp，再次运行就正常。因此更确信是删去cq和qp的问题，不过暂不清楚原理。
 定位问题：本来正常的代码，仅仅注释掉server里把qp.qp_num传给client的代码时，就出现了retry exceeded。但是还不了解原理。
 原理：问题在于rdma连接必须要两边都有qp，即使被单边访问的一端不往qp里进行请求。rdma连接里一个机器的qp对应另一个机器的qp，所以有多个机器就要多个qp。所以server要给每个client创建一个qp，各自连接，不过cq可以不用多个，共用一个就行。已解决。
+
+
+问题：误用cloudlab集群控制网络，流量过大被监测到，导致实验中断并收到官方邮件。
+解决：网卡两个端口，第一个端口默认是控制网络的，所以要使用第二个端口。两个端口的GID表是独立的，要查一下确认GID的index，该index是较稳定的，一般不变。
 
 

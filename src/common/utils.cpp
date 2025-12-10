@@ -79,3 +79,7 @@ int reliable_recv(int sockfd, void *data, std::size_t length) {
     }
     return total_received;
 }
+
+void assert_else(bool condition, const std::string& message) {
+    if (!condition) std::cerr << "Error: " << message << std::endl;
+}

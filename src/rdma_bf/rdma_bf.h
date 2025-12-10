@@ -15,6 +15,7 @@ struct RdmaBF_Cli
 {
     unsigned int m;
     unsigned int k;
+    uint32_t mutex_gran;
     uint8_t *local_buf;
     uint64_t *mutex_buf;
 
@@ -25,13 +26,15 @@ struct RdmaBF_Cli
 
     ibv_mr *local_mr;
     ibv_mr *mutex_mr;
+    ibv_sge *buffer_sge;
+    ibv_sge *mutex_sge;
 
     rdma_conn_info remote_info;
 
     int sockfd;
 };
 
-void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, const char* server_ip);
+void RdmaBF_Cli_init(struct RdmaBF_Cli *rdma_bf, unsigned int n, double fpr, const char* server_ip, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index, uint32_t mutex_gran);
 
 void RdmaBF_Cli_destroy(struct RdmaBF_Cli *rdma_bf);
 
@@ -44,6 +47,7 @@ struct RdmaBF_Srv
 {
     unsigned int m;
     unsigned int k;
+    uint32_t mutex_gran;
     uint8_t *bit_vector;
 
     ibv_context *ctx;
@@ -57,16 +61,14 @@ struct RdmaBF_Srv
     int count_clients_expected;
     rdma_conn_info *remote_info_list;
 
-    unsigned int count_mutex;
     uint64_t *mutex_list;
 };
 
-void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int client_count);
+void RdmaBF_Srv_init(struct RdmaBF_Srv *rdma_bf, unsigned int n, double fpr, int client_count, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index, uint32_t mutex_gran);
 
 void RdmaBF_Srv_destroy(struct RdmaBF_Srv *rdma_bf);
 
 void RdmaBF_Srv_clear(struct RdmaBF_Srv *rdma_bf);
-
 
 // ibv_send_wr DEFAULT_RDMA_READ_WR;
 
