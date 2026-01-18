@@ -1,4 +1,5 @@
 import os, sys, subprocess, time
+from pathlib import Path
 
 rnic_name = "mlx5_0"
 rnic_port = 1
@@ -107,11 +108,10 @@ if __name__ == "__main__":
         ])
         list_cmd_chmod = CommandList([
             Command(["chmod", "700", ".ssh"]),
-            Command(["chmod", "600", ".ssh/cloudlab"]),
+            Command(["chmod", "600", ".ssh/id_ed25519_rdma"]),
         ])
         for machine in list_machines:
-            pass
-        #     ssh_exec(machine, list_cmd_init)
+            ssh_exec(machine, list_cmd_init)
         with open(path_public_key_cloudlab) as f:
             pub_key_content = f.read()
         for machine in list_machines[1:]:
