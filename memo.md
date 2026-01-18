@@ -1,14 +1,3 @@
-cd D:\study\rdma-filter\
-
-实验室机器
-scp -r -i "C:\Users\Yuandu\.ssh\id_rsa" -P 10131 src test CMakeLists.txt build root@210.28.134.155:liuyunchuan/exp01
-ssh -i "C:\Users\Yuandu\.ssh\id_rsa" -p 10131 root@210.28.134.155
-cd liuyunchuan/exp01/build
-cmake -DTOGGLE_RDMA=OFF ..
-./test/1_test
-
-美国机器
-
 python scripts/test.py init
 python scripts/test.py compile
 python scripts/test.py deploy; python scripts/test.py run
@@ -16,14 +5,6 @@ python scripts/test.py collect
 python scripts/test.py stop
 python scripts/test.py compile -DTOGGLE_LOCK_FREE=ON
 python scripts/test.py perftest
-
-ssh -o StrictHostKeyChecking=no -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@clnode352.clemson.cloudlab.us
-ssh -o StrictHostKeyChecking=no -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@clnode363.clemson.cloudlab.us
-ssh -o StrictHostKeyChecking=no -i "C:\Users\Yuandu\.ssh\id_rsa" yunchuan@clnode392.clemson.cloudlab.us
-
-scp -r src test build CMakeLists.txt yunchuan@ms0902.utah.cloudlab.us:exp01
-scp -r src test build CMakeLists.txt yunchuan@ms0913.utah.cloudlab.us:exp01
-scp -r src test build CMakeLists.txt yunchuan@ms0938.utah.cloudlab.us:exp01
 
 mkdir exp01
 sudo apt update
