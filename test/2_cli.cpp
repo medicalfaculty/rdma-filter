@@ -204,36 +204,36 @@ int main(int argc, char **argv) {
 // ----------------------------------------------------------------------------------------------
 
     std::cout << "=== RdmaCF Experiment ===" << std::endl;
-    std::cerr << "[Client] Starting RdmaCF_Cli_init..." << std::endl;
+    // std::cerr << "[Client] Starting RdmaCF_Cli_init..." << std::endl;
     struct RdmaCF_Cli cli;
     RdmaCF_Cli_init(&cli, INSERT_COUNT, BITS_PER_TAG_CF, K_MAX_KICK_CF, MUTEX_GRAN_BUCKET_CF, SERVER_IP, RNIC_NAME, RNIC_PORT, TCP_PORT, GID_INDEX);
-    std::cerr << "[Client] RdmaCF_Cli_init completed" << std::endl;
+    // std::cerr << "[Client] RdmaCF_Cli_init completed" << std::endl;
 
-    std::cerr << "[Client] Starting sync_client..." << std::endl;
+    // std::cerr << "[Client] Starting sync_client..." << std::endl;
     sync_client(cli.sockfd);
     std::cout << "[Client] Initialization successfully!" << std::endl;
-    std::cerr << "[Client] Initialization successfully!" << std::endl;
+    // std::cerr << "[Client] Initialization successfully!" << std::endl;
 
     std::cout << "= Inserting =" << std::endl;
-    std::cerr << "[Client] Starting insert phase, sync_client..." << std::endl;
+    // std::cerr << "[Client] Starting insert phase, sync_client..." << std::endl;
     sync_client(cli.sockfd);
-    std::cerr << "[Client] Insert phase sync completed, starting inserts..." << std::endl;
+    // std::cerr << "[Client] Insert phase sync completed, starting inserts..." << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
     uint64_t insert_fail_count = 0;
     for (auto i : to_insert) {
         if (Ok != RdmaCF_Cli_insert(&cli, i)) {
             insert_fail_count++;
-            std::cerr << "[ERROR] Fail Insert(key): " << i << ", fail_count=" << insert_fail_count << std::endl;
+            // std::cerr << "[ERROR] Fail Insert(key): " << i << ", fail_count=" << insert_fail_count << std::endl;
             std::cout << "Fail Insert(index): " << i << std::endl;
         }
         if (insert_fail_count > 100) {
-            std::cerr << "[ERROR] Too many insert failures, aborting" << std::endl;
+            // std::cerr << "[ERROR] Too many insert failures, aborting" << std::endl;
             break;
         }
         // debug
         // exit(0);
     }
-    std::cerr << "[Client] Insert phase completed, total_failures=" << insert_fail_count << std::endl;
+    // std::cerr << "[Client] Insert phase completed, total_failures=" << insert_fail_count << std::endl;
     end_time = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Inserted " << REAL_INSERT_COUNT << " items." << std::endl;
@@ -243,9 +243,9 @@ int main(int argc, char **argv) {
     // std::cout << "Payload-Bandwidth(MB/s): " << 1.0 * REAL_INSERT_COUNT * 2 * cli.k / duration.count() * 1000.0 / 1024 / 1024 << std::endl;
 
     std::cout << std::endl << "= Lookingup existing items =" << std::endl;
-    std::cerr << "[Client] Starting lookup existing phase, sync_client..." << std::endl;
+    // std::cerr << "[Client] Starting lookup existing phase, sync_client..." << std::endl;
     sync_client(cli.sockfd);
-    std::cerr << "[Client] Lookup existing phase sync completed, starting lookups..." << std::endl;
+    // std::cerr << "[Client] Lookup existing phase sync completed, starting lookups..." << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
     for (auto i : to_insert) {
         if (Ok == RdmaCF_Cli_lookup(&cli, i)) true_positive_count++;
@@ -253,7 +253,7 @@ int main(int argc, char **argv) {
         // debug
         // break;
     }
-    std::cerr << "[Client] Lookup existing phase completed" << std::endl;
+    // std::cerr << "[Client] Lookup existing phase completed" << std::endl;
     end_time = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Lookup " << REAL_INSERT_COUNT << " existing items." <<  std::endl;
@@ -264,9 +264,9 @@ int main(int argc, char **argv) {
     std::cout << "True Positive Rate: " << (double)true_positive_count / REAL_INSERT_COUNT << std::endl;
 
     std::cout << std::endl << "= Lookingup non-existing items =" << std::endl;
-    std::cerr << "[Client] Starting lookup non-existing phase, sync_client..." << std::endl;
+    // std::cerr << "[Client] Starting lookup non-existing phase, sync_client..." << std::endl;
     sync_client(cli.sockfd);
-    std::cerr << "[Client] Lookup non-existing phase sync completed, starting lookups..." << std::endl;
+    // std::cerr << "[Client] Lookup non-existing phase sync completed, starting lookups..." << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
     for (auto i : to_lookup) {
         if (Ok == RdmaCF_Cli_lookup(&cli, i)) false_positive_count++;
@@ -275,7 +275,7 @@ int main(int argc, char **argv) {
         // debug
         // exit(0);
     }
-    std::cerr << "[Client] Lookup non-existing phase completed" << std::endl;
+    // std::cerr << "[Client] Lookup non-existing phase completed" << std::endl;
     end_time = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Lookup " << LOOKUP_COUNT << " non-existing items." <<  std::endl;
@@ -287,19 +287,19 @@ int main(int argc, char **argv) {
     std::cout << "False Positive Rate: " << 1.0 * false_positive_count / LOOKUP_COUNT << std::endl;
 
     std::cout << std::endl << "= Deleting items =" << std::endl;
-    std::cerr << "[Client] Starting delete phase, sync_client..." << std::endl;
+    // std::cerr << "[Client] Starting delete phase, sync_client..." << std::endl;
     sync_client(cli.sockfd);
-    std::cerr << "[Client] Delete phase sync completed, starting deletes..." << std::endl;
+    // std::cerr << "[Client] Delete phase sync completed, starting deletes..." << std::endl;
     start_time = std::chrono::high_resolution_clock::now();
     uint64_t delete_fail_count = 0;
     for (auto i : to_insert) {
         if (Ok != RdmaCF_Cli_delete(&cli, i)) {
             delete_fail_count++;
-            std::cerr << "[ERROR] Fail Delete(key): " << i << ", fail_count=" << delete_fail_count << std::endl;
+            // std::cerr << "[ERROR] Fail Delete(key): " << i << ", fail_count=" << delete_fail_count << std::endl;
             std::cout << "Fail Delete(index): " << i << std::endl;
         }
     }
-    std::cerr << "[Client] Delete phase completed, total_failures=" << delete_fail_count << std::endl;
+    // std::cerr << "[Client] Delete phase completed, total_failures=" << delete_fail_count << std::endl;
     end_time = std::chrono::high_resolution_clock::now();
     duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     std::cout << "Lookup " << REAL_INSERT_COUNT << " non-existing items." <<  std::endl;
@@ -309,15 +309,15 @@ int main(int argc, char **argv) {
 
 // ----------------------------------------------------------------------------------------------
 
-    std::cerr << "[Client] Sending EXIT signal..." << std::endl;
+    // std::cerr << "[Client] Sending EXIT signal..." << std::endl;
     reliable_send(cli.sockfd, "EXIT", 5);
-    std::cerr << "[Client] Destroying client..." << std::endl;
+    // std::cerr << "[Client] Destroying client..." << std::endl;
     RdmaCF_Cli_destroy(&cli);
-    std::cerr << "[Client] Client destroyed" << std::endl;
+    // std::cerr << "[Client] Client destroyed" << std::endl;
 
     std::cout << "==== Experiment End ====" << std::endl;
     std::cout << "Current Time: " << get_current_time_string() << std::endl;
-    std::cerr << "[Client] ==== Experiment End ====" << std::endl;
-    std::cerr << "[Client] Current Time: " << get_current_time_string() << std::endl;
+    // std::cerr << "[Client] ==== Experiment End ====" << std::endl;
+    // std::cerr << "[Client] Current Time: " << get_current_time_string() << std::endl;
     return 0;
 }

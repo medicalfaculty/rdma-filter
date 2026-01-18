@@ -100,11 +100,9 @@ int rdma_one_side(ibv_qp *qp, int wr_id, ibv_sge *sge, uint64_t remote_addr, uin
 
     ibv_send_wr *bad_wr;
     const char* opcode_str = (opcode == IBV_WR_RDMA_READ) ? "READ" : (opcode == IBV_WR_RDMA_WRITE) ? "WRITE" : "UNKNOWN";
-    std::cerr << "[DEBUG] rdma_one_side: wr_id=" << wr_id << ", opcode=" << opcode_str 
-              << ", remote_addr=0x" << std::hex << remote_addr << std::dec 
-              << ", rkey=" << rkey << std::endl;
+    // std::cerr << "[DEBUG] rdma_one_side: wr_id=" << wr_id << ", opcode=" << opcode_str  << ", remote_addr=0x" << std::hex << remote_addr << std::dec  << ", rkey=" << rkey << std::endl;
     if (ibv_post_send(qp, &wr, &bad_wr) != 0) {
-        std::cerr << "[ERROR] ibv_post_send failed: wr_id=" << wr_id << ", opcode=" << opcode_str << std::endl;
+        // std::cerr << "[ERROR] ibv_post_send failed: wr_id=" << wr_id << ", opcode=" << opcode_str << std::endl;
         assert_else(false, "ibv_post_send (RDMA " + std::string(opcode_str) + ") failed");
         return 0;
     }
@@ -117,17 +115,17 @@ int check_cq(ibv_cq *cq, int wr_id) {
     while (ibv_poll_cq(cq, wr_id, &wc) < 1) {
         poll_count++;
         if (poll_count > 1000000) {
-            std::cerr << "[ERROR] check_cq: timeout waiting for completion, wr_id=" << wr_id << std::endl;
+            // std::cerr << "[ERROR] check_cq: timeout waiting for completion, wr_id=" << wr_id << std::endl;
             return 0;
         }
     }
     if (wc.status != IBV_WC_SUCCESS) {
-        std::cerr << "[ERROR] check_cq: RDMA operation failed: wr_id=" << wr_id 
-                  << ", status=" << ibv_wc_status_str(wc.status) << std::endl;
+        // std::cerr << "[ERROR] check_cq: RDMA operation failed: wr_id=" << wr_id 
+        //           << ", status=" << ibv_wc_status_str(wc.status) << std::endl;
         assert_else(false, "RDMA operation failed: " + std::string(ibv_wc_status_str(wc.status)));
         return 0;
     }
-    std::cerr << "[DEBUG] check_cq: success, wr_id=" << wr_id << std::endl;
+    // std::cerr << "[DEBUG] check_cq: success, wr_id=" << wr_id << std::endl;
     return 1;
 }
 
@@ -150,11 +148,10 @@ int rdma_atomic_cas(ibv_qp *qp, int wr_id, ibv_sge *sge, ibv_cq *cq, uint64_t re
     ibv_wc wc;
     // 自旋直到获取锁
     int retry = 0;
-    std::cerr << "[DEBUG] rdma_atomic_cas: wr_id=" << wr_id << ", remote_addr=0x" << std::hex << remote_addr 
-              << std::dec << ", rkey=" << rkey << ", compare_add=" << compare_add << ", swap=" << swap << std::endl;
+    // std::cerr << "[DEBUG] rdma_atomic_cas: wr_id=" << wr_id << ", remote_addr=0x" << std::hex << remote_addr  << std::dec << ", rkey=" << rkey << ", compare_add=" << compare_add << ", swap=" << swap << std::endl;
     while (retry++ < COUNT_RETRY_CAS_MAX) {
         if (ibv_post_send(qp, &wr, &bad_wr)) {
-            std::cerr << "[ERROR] rdma_atomic_cas: ibv_post_send failed, wr_id=" << wr_id << ", retry=" << retry << std::endl;
+            // std::cerr << "[ERROR] rdma_atomic_cas: ibv_post_send failed, wr_id=" << wr_id << ", retry=" << retry << std::endl;
             assert_else(false, "ibv_post_send (CAS lock) failed");
             return 0;
         }
@@ -162,30 +159,29 @@ int rdma_atomic_cas(ibv_qp *qp, int wr_id, ibv_sge *sge, ibv_cq *cq, uint64_t re
         while (ibv_poll_cq(cq, wr_id, &wc) < 1) {
             poll_count++;
             if (poll_count > 1000000) {
-                std::cerr << "[ERROR] rdma_atomic_cas: timeout polling CQ, wr_id=" << wr_id << ", retry=" << retry << std::endl;
+                // std::cerr << "[ERROR] rdma_atomic_cas: timeout polling CQ, wr_id=" << wr_id << ", retry=" << retry << std::endl;
                 return 0;
             }
         }
         if (wc.status != IBV_WC_SUCCESS) {
-            std::cerr << "[ERROR] rdma_atomic_cas: CAS operation failed, wr_id=" << wr_id 
-                      << ", status=" << ibv_wc_status_str(wc.status) << ", retry=" << retry << std::endl;
+            // std::cerr << "[ERROR] rdma_atomic_cas: CAS operation failed, wr_id=" << wr_id 
+            //           << ", status=" << ibv_wc_status_str(wc.status) << ", retry=" << retry << std::endl;
             assert_else(false, "CAS lock failed: " + std::string(ibv_wc_status_str(wc.status)));
             return 0;
         }
         // 如果返回值为 compare_add，说明成功获取锁
         uint64_t result = *((uint64_t *)(sge->addr));
         if (result == compare_add) {
-            std::cerr << "[DEBUG] rdma_atomic_cas: lock acquired, wr_id=" << wr_id << ", retry=" << retry << std::endl;
+            // std::cerr << "[DEBUG] rdma_atomic_cas: lock acquired, wr_id=" << wr_id << ", retry=" << retry << std::endl;
             break;
         }
         if (retry % 100 == 0) {
-            std::cerr << "[DEBUG] rdma_atomic_cas: waiting for lock, wr_id=" << wr_id << ", retry=" << retry 
-                      << ", result=" << result << ", expected=" << compare_add << std::endl;
+            // std::cerr << "[DEBUG] rdma_atomic_cas: waiting for lock, wr_id=" << wr_id << ", retry=" << retry << ", result=" << result << ", expected=" << compare_add << std::endl;
         }
         usleep(200 + rand() % 300);
     }
     if (retry >= COUNT_RETRY_CAS_MAX) {
-        std::cerr << "[ERROR] rdma_atomic_cas: failed to acquire lock after " << COUNT_RETRY_CAS_MAX << " retries, wr_id=" << wr_id << std::endl;
+        // std::cerr << "[ERROR] rdma_atomic_cas: failed to acquire lock after " << COUNT_RETRY_CAS_MAX << " retries, wr_id=" << wr_id << std::endl;
         return 0;
     }
     return 1;

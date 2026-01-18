@@ -70,47 +70,47 @@ int main(int argc, char **argv) {
     // RdmaOHBBF_Srv_destroy(&srv);
 
 // ----------------------------------------------------------------------------------------------
-    std::cerr << "[Server] Starting RdmaCF_Srv_init..." << std::endl;
+    // std::cerr << "[Server] Starting RdmaCF_Srv_init..." << std::endl;
     struct RdmaCF_Srv srv;
     RdmaCF_Srv_init(&srv, INSERT_COUNT, BITS_PER_TAG_CF, MUTEX_GRAN_BUCKET_CF, CLIENT_COUNT, RNIC_NAME, RNIC_PORT, TCP_PORT, GID_INDEX);
-    std::cerr << "[Server] RdmaCF_Srv_init completed" << std::endl;
+    // std::cerr << "[Server] RdmaCF_Srv_init completed" << std::endl;
     
-    std::cerr << "[Server] Starting sync_server (init)..." << std::endl;
+    // std::cerr << "[Server] Starting sync_server (init)..." << std::endl;
     sync_server(srv.list_sockfd);
     std::cout << "[Server] Initialization successfully!" << std::endl;
-    std::cerr << "[Server] Initialization successfully!" << std::endl;
+    // std::cerr << "[Server] Initialization successfully!" << std::endl;
 
-    std::cerr << "[Server] Starting sync_server (insert)..." << std::endl;
+    // std::cerr << "[Server] Starting sync_server (insert)..." << std::endl;
     sync_server(srv.list_sockfd);
-    std::cerr << "[Server] Insert phase sync completed" << std::endl;
+    // std::cerr << "[Server] Insert phase sync completed" << std::endl;
     
-    std::cerr << "[Server] Starting sync_server (lookup existing)..." << std::endl;
+    // std::cerr << "[Server] Starting sync_server (lookup existing)..." << std::endl;
     sync_server(srv.list_sockfd);
-    std::cerr << "[Server] Lookup existing phase sync completed" << std::endl;
+    // std::cerr << "[Server] Lookup existing phase sync completed" << std::endl;
     
-    std::cerr << "[Server] Starting sync_server (lookup non-existing)..." << std::endl;
+    // std::cerr << "[Server] Starting sync_server (lookup non-existing)..." << std::endl;
     sync_server(srv.list_sockfd);
-    std::cerr << "[Server] Lookup non-existing phase sync completed" << std::endl;
+    // std::cerr << "[Server] Lookup non-existing phase sync completed" << std::endl;
     
-    std::cerr << "[Server] Starting sync_server (delete)..." << std::endl;
+    // std::cerr << "[Server] Starting sync_server (delete)..." << std::endl;
     sync_server(srv.list_sockfd);
-    std::cerr << "[Server] Delete phase sync completed" << std::endl;
+    // std::cerr << "[Server] Delete phase sync completed" << std::endl;
     
-    std::cerr << "[Server] Waiting for EXIT messages from clients..." << std::endl;
+    // std::cerr << "[Server] Waiting for EXIT messages from clients..." << std::endl;
     for (int i = 0; i < CLIENT_COUNT; i++) {
-        std::cerr << "[Server] Waiting for EXIT from client " << i + 1 << "/" << CLIENT_COUNT << std::endl;
+        // std::cerr << "[Server] Waiting for EXIT from client " << i + 1 << "/" << CLIENT_COUNT << std::endl;
         reliable_recv(srv.list_sockfd[i], cmd, 5);
         std::cout << "[Server] Received close message from client: " << i + 1 << "/" << CLIENT_COUNT << std::endl;
-        std::cerr << "[Server] Received close message from client: " << i + 1 << "/" << CLIENT_COUNT << std::endl;
+        // std::cerr << "[Server] Received close message from client: " << i + 1 << "/" << CLIENT_COUNT << std::endl;
     }
-    std::cerr << "[Server] Destroying server..." << std::endl;
+    // std::cerr << "[Server] Destroying server..." << std::endl;
     RdmaCF_Srv_destroy(&srv);
-    std::cerr << "[Server] Server destroyed" << std::endl;
+    // std::cerr << "[Server] Server destroyed" << std::endl;
 
 // ----------------------------------------------------------------------------------------------
     std::cout << "==== Experiment End ====" << std::endl;
     std::cout << "Current Time: " << get_current_time_string() << std::endl;
-    std::cerr << "[Server] ==== Experiment End ====" << std::endl;
-    std::cerr << "[Server] Current Time: " << get_current_time_string() << std::endl;
+    // std::cerr << "[Server] ==== Experiment End ====" << std::endl;
+    // std::cerr << "[Server] Current Time: " << get_current_time_string() << std::endl;
     return 0;
 }
