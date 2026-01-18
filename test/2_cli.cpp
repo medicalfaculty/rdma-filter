@@ -9,7 +9,7 @@
 #include <chrono>
 
 
-#define SERVER_IP "10.10.1.1"
+#define SERVER_IP "10.10.1.4"
 #define RNIC_NAME "mlx4_0"
 #define RNIC_PORT (1)
 #define GID_INDEX (2)

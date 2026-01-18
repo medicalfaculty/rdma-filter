@@ -11,8 +11,8 @@ sudo apt update
 sudo apt install cmake libibverbs-dev rdma-core librdmacm1 librdmacm-dev ibverbs-utils infiniband-diags perftest linux-tools-common linux-tools-generic linux-cloud-tools-generic tmux
 
 ib_send_bw -d mlx4_0 -i 2
-ib_send_bw -d mlx4_0 -i 2               10.10.1.1
-ib_send_bw -d mlx4_0 -i 2 -D 4 -s 65536 10.10.1.1
+ib_send_bw -d mlx4_0 -i 2               10.10.1.4
+ib_send_bw -d mlx4_0 -i 2 -D 4 -s 65536 10.10.1.4
 
 tmux new -s exp_srv
 tmux new -s exp_cli
@@ -28,7 +28,7 @@ tmux ls
 tmux attach -t t1
 tmux kill-session -t t1
 
-ping 10.10.1.1
+ping 10.10.1.4
 
 
 查看NAT地址
