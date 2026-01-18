@@ -1,7 +1,7 @@
 import os, sys, subprocess, time
 from pathlib import Path
 
-rnic_name = "mlx5_0"
+rnic_name = "mlx4_0"
 rnic_port = 1
 nat_ip = "10.10.1.4"
 count_clients = 2

@@ -10,7 +10,7 @@
 
 
 #define SERVER_IP "10.10.1.1"
-#define RNIC_NAME "mlx5_0"
+#define RNIC_NAME "mlx4_0"
 #define RNIC_PORT (1)
 #define GID_INDEX (2)
 #define TCP_PORT (18515)

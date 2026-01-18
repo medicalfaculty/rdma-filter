@@ -68,3 +68,40 @@
 [INFO] [2026-01-18 11:04:35] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_srv > out.log 2>&1'
 [INFO] [2026-01-18 11:04:39] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1145.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_cli > out.log 2>&1'
 [INFO] [2026-01-18 11:04:42] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1129.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_cli > out.log 2>&1'
+[INFO] [2026-01-18 11:12:31] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:12:31] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_0.log
+[INFO] [2026-01-18 11:12:41] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1145.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_1.log
+[INFO] [2026-01-18 11:13:00] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1129.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_2.log
+[INFO] [2026-01-18 11:19:03] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:19:03] [scp_send] Execute: scp -r -o StrictHostKeyChecking=no /Users/sheshuchen/Desktop/rdma-filter/src /Users/sheshuchen/Desktop/rdma-filter/test /Users/sheshuchen/Desktop/rdma-filter/CMakeLists.txt shuchen@ms1138.utah.cloudlab.us:exp1
+[INFO] [2026-01-18 11:20:13] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us cd exp1/build; cmake .. > compile.log 2>&1; make >> compile.log 2>&1
+[INFO] [2026-01-18 11:20:31] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:exp1/build/compile.log /Users/sheshuchen/Desktop/rdma-filter/output/compile.log
+[INFO] [2026-01-18 11:21:14] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:21:14] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us scp -r -o StrictHostKeyChecking=no -i .ssh/id_ed25519_rdma exp1/build shuchen@ms1145.utah.cloudlab.us:exp1/
+[INFO] [2026-01-18 11:21:18] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us scp -r -o StrictHostKeyChecking=no -i .ssh/id_ed25519_rdma exp1/build shuchen@ms1129.utah.cloudlab.us:exp1/
+[INFO] [2026-01-18 11:21:28] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:21:28] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_srv > out.log 2>&1'
+[INFO] [2026-01-18 11:21:31] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1145.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_cli > out.log 2>&1'
+[INFO] [2026-01-18 11:21:35] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1129.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true; tmux new-session -d -s exp './exp1/build/test/2_cli > out.log 2>&1'
+[INFO] [2026-01-18 11:21:48] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:21:48] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_0.log
+[INFO] [2026-01-18 11:22:04] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1145.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_1.log
+[INFO] [2026-01-18 11:22:14] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1129.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_2.log
+[INFO] [2026-01-18 11:24:45] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:24:45] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_0.log
+[INFO] [2026-01-18 11:24:54] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1145.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_1.log
+[INFO] [2026-01-18 11:25:02] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1129.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_2.log
+[INFO] [2026-01-18 11:27:23] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:27:23] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_0.log
+[INFO] [2026-01-18 11:27:32] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1145.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_1.log
+[INFO] [2026-01-18 11:27:40] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1129.utah.cloudlab.us:out.log /Users/sheshuchen/Desktop/rdma-filter/output/out_2.log
+[INFO] [2026-01-18 11:29:28] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:29:28] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true
+[INFO] [2026-01-18 11:29:31] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1145.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true
+[INFO] [2026-01-18 11:29:34] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1129.utah.cloudlab.us tmux kill-session -t exp 2>/dev/null || true
+[INFO] [2026-01-18 11:29:38] [stop] All experiment tmux sessions killed.
+[INFO] [2026-01-18 11:29:45] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 11:29:45] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us tmux kill-session -t perftest 2>/dev/null || true; tmux new-session -d -s perftest 'ib_send_bw -d mlx4_0 -i 1 > test.log 2>&1'
+[INFO] [2026-01-18 11:29:48] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1145.utah.cloudlab.us tmux kill-session -t perftest 2>/dev/null || true; tmux new-session -d -s perftest 'ib_send_bw -d mlx4_0 -i 1 10.10.1.4 > test.log 2>&1'
+[INFO] [2026-01-18 11:29:56] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:test.log /Users/sheshuchen/Desktop/rdma-filter/output/perftest_server.log
+[INFO] [2026-01-18 11:30:07] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1145.utah.cloudlab.us:test.log /Users/sheshuchen/Desktop/rdma-filter/output/perftest_client.log
