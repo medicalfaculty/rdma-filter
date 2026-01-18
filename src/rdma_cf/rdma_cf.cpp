@@ -1,5 +1,6 @@
 #include "rdma_cf.h"
 #include "utils.h"
+#include <iomanip>
 
 #define mask4(x) ((x) & ((1ULL << (4)) - 1))
 #define mask8(x) ((x) & ((1ULL << (8)) - 1))
@@ -19,6 +20,8 @@
 
 
 void RdmaCF_Cli_init(struct RdmaCF_Cli *cli, unsigned int num_keys, unsigned int bits_per_tag, unsigned int kMaxCuckooCount, uint32_t mutex_gran_bucket, const char* server_ip, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index) {
+    std::cerr << "[Client] RdmaCF_Cli_init: num_keys=" << num_keys << ", bits_per_tag=" << bits_per_tag 
+              << ", kMaxCuckooCount=" << kMaxCuckooCount << ", mutex_gran_bucket=" << mutex_gran_bucket << std::endl;
     assert_else(bits_per_tag == 4 || bits_per_tag == 8 || bits_per_tag == 16, "bits_per_tag must be 4, 8, or 16");
     memset(cli, 0, sizeof(*cli));
     cli->num_keys = num_keys;
@@ -31,23 +34,33 @@ void RdmaCF_Cli_init(struct RdmaCF_Cli *cli, unsigned int num_keys, unsigned int
     double frac = (double)num_keys / cli->count_buckets / TAGS_PER_BUCKET;
     if (frac > 0.96) cli->count_buckets <<= 1;
     cli->size_bucket = (bits_per_tag * TAGS_PER_BUCKET) >> 3;
+    std::cerr << "[Client] RdmaCF_Cli_init: count_buckets=" << cli->count_buckets 
+              << ", size_bucket=" << cli->size_bucket << ", frac=" << frac << std::endl;
 
     // allocate
+    std::cerr << "[Client] RdmaCF_Cli_init: Allocating buffers..." << std::endl;
     alloc_aligned_64((void**)&cli->buf_bucket, COUNT_BUF_BUCKET * sizeof(uint64_t));
     alloc_aligned_64((void**)&cli->buf_mutex, COUNT_BUF_BUCKET * sizeof(uint64_t));
     alloc_aligned_64((void**)&cli->buf_victim, sizeof(victim_entry));
     alloc_aligned_64((void**)&cli->buf_mutex_victim, sizeof(uint64_t));
+    std::cerr << "[Client] RdmaCF_Cli_init: Buffers allocated successfully" << std::endl;
 
     // connect
+    std::cerr << "[Client] RdmaCF_Cli_init: Connecting to server..." << std::endl;
     RdmaCF_Cli_conn(cli, server_ip, name_dev, rnic_port, tcp_port, gid_index);
+    std::cerr << "[Client] RdmaCF_Cli_init: Connection established" << std::endl;
     return;
 }
 
 int RdmaCF_Cli_conn(struct RdmaCF_Cli *cli, const char* server_ip, const char* name_dev, uint8_t rnic_port, uint32_t tcp_port, uint8_t gid_index) {
+    std::cerr << "[Client] RdmaCF_Cli_conn: Opening RDMA context, device=" << name_dev << std::endl;
     // open ctx and create pd and cq
     cli->ctx = open_rdma_ctx(name_dev);
+    std::cerr << "[Client] RdmaCF_Cli_conn: RDMA context opened" << std::endl;
     cli->pd = ibv_alloc_pd(cli->ctx);
+    std::cerr << "[Client] RdmaCF_Cli_conn: Protection domain allocated" << std::endl;
     cli->cq = ibv_create_cq(cli->ctx, 16, NULL, NULL, 0);
+    std::cerr << "[Client] RdmaCF_Cli_conn: Completion queue created" << std::endl;
 
     // register mr
     cli->list_mr_bucket = std::vector<ibv_mr *>(COUNT_BUF_BUCKET);
@@ -86,8 +99,20 @@ int RdmaCF_Cli_conn(struct RdmaCF_Cli *cli, const char* server_ip, const char* n
     tcp_exchange_client<rdma_conn_info_cf>(tcp_port, server_ip, cli->sockfd, local_info, &(cli->remote_info));
 
     // modify qp to rtr and rts
-    modify_rtr_qp(cli->qp, cli->remote_info.qp_num, cli->remote_info.psn, cli->remote_info.gid, gid_index, rnic_port);
-    modify_rts_qp(cli->qp, local_info->psn);
+    std::cerr << "[Client] RdmaCF_Cli_conn: Modifying QP to RTR..." << std::endl;
+    int ret = modify_rtr_qp(cli->qp, cli->remote_info.qp_num, cli->remote_info.psn, cli->remote_info.gid, gid_index, rnic_port);
+    if (ret != 0) {
+        std::cerr << "[ERROR] RdmaCF_Cli_conn: modify_rtr_qp failed, ret=" << ret << std::endl;
+        return 0;
+    }
+    std::cerr << "[Client] RdmaCF_Cli_conn: QP modified to RTR" << std::endl;
+    std::cerr << "[Client] RdmaCF_Cli_conn: Modifying QP to RTS..." << std::endl;
+    ret = modify_rts_qp(cli->qp, local_info->psn);
+    if (ret != 0) {
+        std::cerr << "[ERROR] RdmaCF_Cli_conn: modify_rts_qp failed, ret=" << ret << std::endl;
+        return 0;
+    }
+    std::cerr << "[Client] RdmaCF_Cli_conn: QP modified to RTS, connection ready" << std::endl;
 
     return 1;
 }
@@ -118,9 +143,14 @@ void RdmaCF_Cli_destroy(struct RdmaCF_Cli *cli) {
 }
 
 Status RdmaCF_Cli_insert(struct RdmaCF_Cli *cli, uint64_t key) {
+    static uint64_t insert_count = 0;
+    if (++insert_count % 100000 == 0) {
+        std::cerr << "[Client] RdmaCF_Cli_insert: progress, count=" << insert_count << ", key=" << key << std::endl;
+    }
     RdmaCF_Cli_lock_victim(cli);
     RdmaCF_Cli_read_victim(cli);
     if (cli->buf_victim->used) {
+        std::cerr << "[WARN] RdmaCF_Cli_insert: victim entry is used, key=" << key << std::endl;
         RdmaCF_Cli_unlock_victim(cli);
         return NotEnoughSpace;
     }
@@ -129,6 +159,9 @@ Status RdmaCF_Cli_insert(struct RdmaCF_Cli *cli, uint64_t key) {
     uint16_t tag;
     RdmaCF_Cli_generate_index_tag_hash(cli, key, index, tag);
     auto res = RdmaCF_Cli_insert_impl(cli, index, tag);
+    if (res != Ok) {
+        std::cerr << "[ERROR] RdmaCF_Cli_insert: insert_impl failed, key=" << key << ", index=" << index << ", tag=" << tag << std::endl;
+    }
     RdmaCF_Cli_unlock_victim(cli);
     return res;
 }
@@ -142,17 +175,27 @@ Status RdmaCF_Cli_insert_impl(struct RdmaCF_Cli *cli, uint32_t bucket_index, uin
     for (int count = 0; count < cli->k_max_kick; count++) {
         kick_out = count > 0;
         tag_prev = 0;
+        if (count > 0 && count % 10 == 0) {
+            std::cerr << "[DEBUG] RdmaCF_Cli_insert_impl: cuckoo kick count=" << count 
+                      << ", index_curr=" << index_curr << ", tag_curr=" << tag_curr << std::endl;
+        }
         RdmaCF_Cli_lock_bucket(cli, index_curr, 2);
         RdmaCF_Cli_read_bucket(cli, index_curr, 2);
         inserted = RdmaCF_Cli_insert_tag(cli, tag_curr, 2, kick_out, tag_prev);
         RdmaCF_Cli_write_bucket(cli, index_curr, 2);
         RdmaCF_Cli_unlock_bucket(cli, index_curr, 2);
-        if (inserted) return Ok;
+        if (inserted) {
+            if (count > 0) {
+                std::cerr << "[DEBUG] RdmaCF_Cli_insert_impl: inserted after " << count << " kicks" << std::endl;
+            }
+            return Ok;
+        }
         if (kick_out) {
             tag_curr = tag_prev;
         }
         index_curr = RdmaCF_Cli_get_alternate_index(cli, index_curr, tag_prev);
     }
+    std::cerr << "[WARN] RdmaCF_Cli_insert_impl: max kicks reached, using victim entry, index=" << index_curr << ", tag=" << tag_curr << std::endl;
     cli->buf_victim->used = true;
     cli->buf_victim->index = index_curr;
     cli->buf_victim->tag = tag_curr;
@@ -340,8 +383,14 @@ int RdmaCF_Cli_write_victim(struct RdmaCF_Cli *cli) {
 
 int RdmaCF_Cli_lock_victim(struct RdmaCF_Cli *cli) {
 #ifndef TOGGLE_LOCK_FREE
+    std::cerr << "[DEBUG] RdmaCF_Cli_lock_victim: attempting to lock..." << std::endl;
     auto res_cas = rdma_atomic_cas(cli->qp, 200, cli->sge_mutex_victim, cli->cq, cli->remote_info.mutex_victim_addr, cli->remote_info.mutex_victim_rkey, 0, 1);
-    assert_else(res_cas == 1, "Failed to lock victim mutex");
+    if (res_cas != 1) {
+        std::cerr << "[ERROR] RdmaCF_Cli_lock_victim: failed to acquire lock" << std::endl;
+        assert_else(false, "Failed to lock victim mutex");
+        return 0;
+    }
+    std::cerr << "[DEBUG] RdmaCF_Cli_lock_victim: lock acquired" << std::endl;
 #endif
     return 1;
 }
@@ -359,11 +408,15 @@ int RdmaCF_Cli_unlock_victim(struct RdmaCF_Cli *cli) {
 int RdmaCF_Cli_lock_bucket(struct RdmaCF_Cli *cli, uint32_t index_bucket, int index_buf_bucket) {
 #ifndef TOGGLE_LOCK_FREE
     uint64_t addr_mutex = cli->remote_info.mutex_addr + (index_bucket / cli->mutex_gran_bucket) * sizeof(uint64_t);
+    std::cerr << "[DEBUG] RdmaCF_Cli_lock_bucket: index=" << index_bucket << ", mutex_addr=0x" 
+              << std::hex << addr_mutex << std::dec << ", buf_index=" << index_buf_bucket << std::endl;
     auto res_cas = rdma_atomic_cas(cli->qp, 100, cli->list_sge_mutex[index_buf_bucket], cli->cq, addr_mutex, cli->remote_info.mutex_rkey, 0, 1);
-    assert_else(res_cas == 1, "Failed to lock bucket mutex");
-
-    // debug
-    assert_else(res_cas == 1, "Failed to lock bucket mutex index: " + std::to_string(index_bucket));
+    if (res_cas != 1) {
+        std::cerr << "[ERROR] RdmaCF_Cli_lock_bucket: failed to acquire lock, index=" << index_bucket << std::endl;
+        assert_else(false, "Failed to lock bucket mutex index: " + std::to_string(index_bucket));
+        return 0;
+    }
+    std::cerr << "[DEBUG] RdmaCF_Cli_lock_bucket: lock acquired, index=" << index_bucket << std::endl;
 #endif
     return 1;
 }

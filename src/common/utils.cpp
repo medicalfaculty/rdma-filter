@@ -4,6 +4,8 @@
 // #include <openssl/rand.h>
 #include <cstring>
 #include <stdexcept>
+#include <cerrno>
+#include <ctime>
 #include "utils.h"
 
 std::vector<uint64_t> GenerateRandom64Cuckoo(std::size_t count) {
@@ -94,21 +96,46 @@ void alloc_aligned_64(void** ptr, std::size_t size) {
 
 void sync_client(int const &sockfd) {
     char cmd[6];
-    reliable_send(sockfd, "READY", 6);
-    reliable_recv(sockfd, cmd, 3);
+    std::cerr << "[Client] sync_client: Sending READY..." << std::endl;
+    int send_result = reliable_send(sockfd, "READY", 6);
+    if (send_result < 0) {
+        std::cerr << "[ERROR] sync_client: failed to send READY, result=" << send_result << std::endl;
+        assert_else(false, "sync_client: failed to send READY", true);
+    }
+    std::cerr << "[Client] sync_client: Waiting for GO..." << std::endl;
+    int recv_result = reliable_recv(sockfd, cmd, 3);
+    if (recv_result < 0) {
+        std::cerr << "[ERROR] sync_client: failed to receive GO, result=" << recv_result << std::endl;
+        assert_else(false, "sync_client: failed to receive GO", true);
+    }
     std::cout << "[Client] " << get_current_time_string() << " Sync point reached." << std::endl;
+    std::cerr << "[Client] " << get_current_time_string() << " Sync point reached." << std::endl;
     return;
 }
 
 void sync_server(std::vector<int> const &list_sockfd) {
     char cmd[6];
-    for (auto const &sockfd : list_sockfd) {
-        reliable_recv(sockfd, cmd, 6);
+    std::cerr << "[Server] sync_server: Waiting for READY from " << list_sockfd.size() << " clients..." << std::endl;
+    for (size_t i = 0; i < list_sockfd.size(); i++) {
+        std::cerr << "[Server] sync_server: Waiting for READY from client " << i + 1 << "/" << list_sockfd.size() << std::endl;
+        int recv_result = reliable_recv(list_sockfd[i], cmd, 6);
+        if (recv_result < 0) {
+            std::cerr << "[ERROR] sync_server: failed to receive READY from client " << i << ", result=" << recv_result << std::endl;
+            assert_else(false, "sync_server: failed to receive READY", true);
+        }
+        std::cerr << "[Server] sync_server: Received READY from client " << i + 1 << std::endl;
     }
-    for (auto const &sockfd : list_sockfd) {
-        reliable_send(sockfd, "GO", 3);
+    std::cerr << "[Server] sync_server: Sending GO to all clients..." << std::endl;
+    for (size_t i = 0; i < list_sockfd.size(); i++) {
+        int send_result = reliable_send(list_sockfd[i], "GO", 3);
+        if (send_result < 0) {
+            std::cerr << "[ERROR] sync_server: failed to send GO to client " << i << ", result=" << send_result << std::endl;
+            assert_else(false, "sync_server: failed to send GO", true);
+        }
+        std::cerr << "[Server] sync_server: Sent GO to client " << i + 1 << std::endl;
     }
     std::cout << "[Server] " << get_current_time_string() << " Sync point reached." << std::endl;
+    std::cerr << "[Server] " << get_current_time_string() << " Sync point reached." << std::endl;
     return;
 }
 

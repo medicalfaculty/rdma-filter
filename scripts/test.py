@@ -164,8 +164,8 @@ if __name__ == "__main__":
             ]))
     
     elif sys.argv[1] == "run":
-        cmd_server_run = Command(["./exp1/build/test/2_srv", ">", "out.log", "2>&1"])
-        cmd_client_run = Command(["./exp1/build/test/2_cli", ">", "out.log", "2>&1"])
+        cmd_server_run = Command(["./exp1/build/test/2_srv", ">", "out.log", "2>>", "out_err.log"])
+        cmd_client_run = Command(["./exp1/build/test/2_cli", ">", "out.log", "2>>", "out_err.log"])
         ssh_exec(list_machines[0], CommandList([cmd_server_run]), use_tmux=True, tmux_session_id="exp")
         for machine in list_machines[1:]:
             ssh_exec(machine, CommandList([cmd_client_run]), use_tmux=True, tmux_session_id="exp")
@@ -176,9 +176,15 @@ if __name__ == "__main__":
             try:
                 scp_recv_single(list_machines[i], "out.log", os.sep.join([str(path_output), f"out_{i}.log"]))
             except subprocess.CalledProcessError as e:
-                print(f"Received machine {i} failed: {e}")
+                print(f"Received machine {i} stdout failed: {e}")
             else:
-                print(f"Received machine {i}.")
+                print(f"Received machine {i} stdout.")
+            try:
+                scp_recv_single(list_machines[i], "out_err.log", os.sep.join([str(path_output), f"out_{i}_err.log"]))
+            except subprocess.CalledProcessError as e:
+                print(f"Received machine {i} stderr failed: {e}")
+            else:
+                print(f"Received machine {i} stderr.")
     
     elif sys.argv[1] == "stop":
         for machine in list_machines:
@@ -206,6 +212,16 @@ if __name__ == "__main__":
         ])
         for machine in list_machines:
             ssh_exec(machine, list_cmd_user_clear)
+    
+    elif sys.argv[1] == "collect_stderr":
+        # Collect stderr logs separately if needed
+        for i in range(len(list_machines)):
+            try:
+                scp_recv_single(list_machines[i], "out_err.log", os.sep.join([str(path_output), f"out_{i}_err.log"]))
+            except subprocess.CalledProcessError as e:
+                print(f"Received machine {i} stderr failed: {e}")
+            else:
+                print(f"Received machine {i} stderr.")
 
     elif sys.argv[1] == "test":
         pass
