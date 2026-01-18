@@ -40,7 +40,9 @@ class CommandList:
 
 def log(label: str = None, msg: str = "", level: str = "INFO"):
     with open(path_script_log, "a") as log_file:
-        log_file.write(f"[{level}] [{time.strftime('%Y-%m-%d %H:%M:%S')}] {f"[{label}]" if label != None else ''} {msg}\n")
+        timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+        label_str = f"[{label}]" if label is not None else ""
+        log_file.write(f"[{level}] [{timestamp}] {label_str} {msg}\n")
 
 def scp_send(remote_machine : str, list_local_path : list, remote_path : str):
     cmd = ["scp", "-o", "StrictHostKeyChecking=no"] + list_local_path + [f"{remote_machine}:{remote_path}"]
