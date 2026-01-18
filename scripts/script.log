@@ -52,3 +52,7 @@
 [INFO] [2026-01-18 10:50:55] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1129.utah.cloudlab.us:.ssh/authorized_keys /Users/sheshuchen/Desktop/rdma-filter/scripts/temp
 [INFO] [2026-01-18 10:51:05] [scp_send] Execute: scp -o StrictHostKeyChecking=no /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us:.ssh
 [INFO] [2026-01-18 10:51:25] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us chmod 700 .ssh; chmod 600 .ssh/id_ed25519_rdma
+[INFO] [2026-01-18 10:57:11] [main] 3 Machines: ['shuchen@ms1138.utah.cloudlab.us', 'shuchen@ms1145.utah.cloudlab.us', 'shuchen@ms1129.utah.cloudlab.us']
+[INFO] [2026-01-18 10:57:11] [scp_send] Execute: scp -r -o StrictHostKeyChecking=no /Users/sheshuchen/Desktop/rdma-filter/src /Users/sheshuchen/Desktop/rdma-filter/test /Users/sheshuchen/Desktop/rdma-filter/CMakeLists.txt shuchen@ms1138.utah.cloudlab.us:exp1
+[INFO] [2026-01-18 10:57:58] [ssh_exec] Execute: ssh -o StrictHostKeyChecking=no -i /Users/sheshuchen/.ssh/id_ed25519_rdma shuchen@ms1138.utah.cloudlab.us cd exp1/build; cmake .. > compile.log 2>&1; make >> compile.log 2>&1
+[INFO] [2026-01-18 10:58:18] [scp_recv_single] Execute: scp -o StrictHostKeyChecking=no shuchen@ms1138.utah.cloudlab.us:exp1/build/compile.log /Users/sheshuchen/Desktop/rdma-filter/output/compile.log

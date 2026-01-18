@@ -17,20 +17,20 @@ An RDMA experiment.
 ```
 // 每次新开的机器运行一次这个，配环境等等
 // 为了让之后部署的时候远端机器们之间能scp传文件，它们之间需要一对密钥，我是提前在本地生成一对，然后在这一步里面传过去
-python scripts/test.py init
+python3 scripts/test.py init
 
 // 编译，会把输出读到output/compile.log，每次运行完检查一下编译成功了吗
-python scripts/test.py compile
+python3 scripts/test.py compile
 
 // 部署 + 运行，需要先编译好，再运行这一步
-python scripts/test.py deploy; python scripts/test.py run
+python3 scripts/test.py deploy; python scripts/test.py run
 
 // 收集结果到output/out_*.log
-python scripts/test.py collect
+python3 scripts/test.py collect
 
 // 中止实验，如果收集时发现不对劲，可以及时中止
-python scripts/test.py stop
+python3 scripts/test.py stop
 
 // perftest测试，结果存在output/perftest_*.log
-python scripts/test.py perftest
+python3 scripts/test.py perftest
 ```
