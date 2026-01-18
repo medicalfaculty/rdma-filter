@@ -23,7 +23,8 @@ python3 scripts/test.py init
 python3 scripts/test.py compile
 
 // 部署 + 运行，需要先编译好，再运行这一步
-python3 scripts/test.py deploy; python scripts/test.py run
+python3 scripts/test.py deploy
+python3 scripts/test.py run
 
 // 收集结果到output/out_*.log
 python3 scripts/test.py collect

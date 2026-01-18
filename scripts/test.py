@@ -160,7 +160,7 @@ if __name__ == "__main__":
     elif sys.argv[1] == "deploy":
         for machine in list_machines[1:]:
             ssh_exec(list_machines[0], CommandList([
-                Command(["scp", "-r", "-o", "StrictHostKeyChecking=no", "-i", ".ssh/cloudlab", "exp1/build", f"{machine}:exp1/"]),
+                Command(["scp", "-r", "-o", "StrictHostKeyChecking=no", "-i", ".ssh/id_ed25519_rdma", "exp1/build", f"{machine}:exp1/"]),
             ]))
     
     elif sys.argv[1] == "run":
@@ -211,7 +211,7 @@ if __name__ == "__main__":
         pass
         list_cmd_chmod = CommandList([
             Command(["chmod", "700", ".ssh"]),
-            Command(["chmod", "600", ".ssh/cloudlab"]),
+            Command(["chmod", "600", ".ssh/id_ed25519_rdma"]),
         ])
         ssh_exec(list_machines[0], list_cmd_chmod)
     
