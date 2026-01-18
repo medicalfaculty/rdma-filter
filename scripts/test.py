@@ -69,7 +69,7 @@ def cmd_tmux_new(session_id : str, list_cmd : CommandList):
     return Command(["tmux", "new-session", "-d", "-s", session_id, f"'{str(list_cmd)}'"])
 
 def ssh_exec(remote_machine : str, list_cmd : CommandList, use_tmux: bool = False, tmux_session_id: str = "test"):
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-i", path_private_key_rsa, remote_machine]
+    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-i", str(path_private_key_rsa), remote_machine]
     str_cmd = None
     if use_tmux:
         str_cmd = str(CommandList([
@@ -114,12 +114,12 @@ if __name__ == "__main__":
         ])
         for machine in list_machines:
             ssh_exec(machine, list_cmd_init)
-        with open(path_public_key_cloudlab) as f:
+        with open(str(path_public_key_cloudlab)) as f:
             pub_key_content = f.read()
         for machine in list_machines[1:]:
-            scp_recv_single(machine, ".ssh/authorized_keys", path_temp)
+            scp_recv_single(machine, ".ssh/authorized_keys", str(path_temp))
             try:
-                with open(os.sep.join([path_temp, "authorized_keys"]), "r") as f:
+                with open(os.sep.join([str(path_temp), "authorized_keys"]), "r") as f:
                     existing_keys = set(line.strip() for line in f if line.strip() and not line.startswith("#"))
             except FileNotFoundError:
                 log("init", f"No authorized_keys file on {machine}", level="WARNING")
@@ -127,10 +127,10 @@ if __name__ == "__main__":
             else:
                 if (pub_key_content.strip() not in existing_keys):
                     log("init", f"Adding public key to {machine}'s authorized_keys")
-                    with open(os.sep.join([path_temp, "authorized_keys"]), "a") as f:
+                    with open(os.sep.join([str(path_temp), "authorized_keys"]), "a") as f:
                         f.write(pub_key_content.strip() + "\n")
-                    scp_send(machine, [os.sep.join([path_temp, "authorized_keys"])], ".ssh")
-        scp_send(list_machines[0], [path_private_key_cloudlab], ".ssh")
+                    scp_send(machine, [os.sep.join([str(path_temp), "authorized_keys"])], ".ssh")
+        scp_send(list_machines[0], [str(path_private_key_cloudlab)], ".ssh")
         ssh_exec(list_machines[0], list_cmd_chmod)
     
     elif sys.argv[1] == "showinfo":
@@ -151,11 +151,11 @@ if __name__ == "__main__":
             Command(["make", ">>", "compile.log", "2>&1"])
         ])
         scp_send(list_machines[0], [
-            os.sep.join([path_project, "src"]), 
-            os.sep.join([path_project, "test"]), 
-            os.sep.join([path_project, "CMakeLists.txt"])], "exp1")
+            os.sep.join([str(path_project), "src"]), 
+            os.sep.join([str(path_project), "test"]), 
+            os.sep.join([str(path_project), "CMakeLists.txt"])], "exp1")
         ssh_exec(list_machines[0], list_cmd_compile)
-        scp_recv_single(list_machines[0], "exp1/build/compile.log", os.sep.join([path_output, "compile.log"]))
+        scp_recv_single(list_machines[0], "exp1/build/compile.log", os.sep.join([str(path_output), "compile.log"]))
     
     elif sys.argv[1] == "deploy":
         for machine in list_machines[1:]:
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     elif sys.argv[1] == "collect":
         for i in range(len(list_machines)):
             try:
-                scp_recv_single(list_machines[i], "out.log", os.sep.join([path_output, f"out_{i}.log"]))
+                scp_recv_single(list_machines[i], "out.log", os.sep.join([str(path_output), f"out_{i}.log"]))
             except subprocess.CalledProcessError as e:
                 print(f"Received machine {i} failed: {e}")
             else:
@@ -195,8 +195,8 @@ if __name__ == "__main__":
         ssh_exec(list_machines[0], list_cmd_perftest_server, use_tmux=True, tmux_session_id="perftest")
         ssh_exec(list_machines[1], list_cmd_perftest_client, use_tmux=True, tmux_session_id="perftest")
         time.sleep(5)
-        scp_recv_single(list_machines[0], "test.log", os.sep.join([path_output, "perftest_server.log"]))
-        scp_recv_single(list_machines[1], "test.log", os.sep.join([path_output, "perftest_client.log"]))
+        scp_recv_single(list_machines[0], "test.log", os.sep.join([str(path_output), "perftest_server.log"]))
+        scp_recv_single(list_machines[1], "test.log", os.sep.join([str(path_output), "perftest_client.log"]))
 
     elif sys.argv[1] == "clear":
         list_cmd_user_clear = CommandList([
