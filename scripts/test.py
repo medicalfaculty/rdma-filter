@@ -2,19 +2,19 @@ import os, sys, subprocess, time
 
 rnic_name = "mlx5_0"
 rnic_port = 1
-nat_ip = "10.10.1.1"
+nat_ip = "10.10.1.4"
 count_clients = 2
 
-path_project = os.sep.join(["D:", "study", "rdma-filter"])
-path_list_machines = os.sep.join([path_project, "scripts", "list_machines.txt"])
-path_temp = os.sep.join([path_project, "scripts", "temp"])
-path_output = os.sep.join([path_project, "output"])
-path_script_log = os.sep.join([path_project, "scripts", "script.log"])
+path_project = Path(__file__).parent.parent.resolve()
+path_list_machines = path_project / "scripts" / "list_machines.txt"
+path_temp = path_project / "scripts" / "temp"
+path_output = path_project / "output"
+path_script_log = path_project / "scripts" / "script.log"
 
-path_ssh_local = os.sep.join(["C:", "Users", "Yuandu", ".ssh"])
-path_public_key_cloudlab = os.sep.join([path_ssh_local, "cloudlab.pub"])
-path_private_key_cloudlab = os.sep.join([path_ssh_local, "cloudlab"])
-path_private_key_rsa = os.sep.join([path_ssh_local, "id_rsa"])
+path_ssh_local = Path.home() / ".ssh"
+path_public_key_cloudlab = path_ssh_local / "id_ed25519_rdma.pub"
+path_private_key_cloudlab = path_ssh_local / "id_ed25519_rdma"
+path_private_key_rsa = path_ssh_local / "id_ed25519_rdma"
 
 class Command:
     words: list
